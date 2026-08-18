@@ -22,6 +22,7 @@ import 'package:fluffychat/pages/chat_details/chat_details.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/file_selector.dart';
+import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/filtered_timeline_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
@@ -1541,6 +1542,26 @@ class ChatController extends State<ChatPageWithRoom>
     replyEvent = null;
     editEvent = null;
   });
+
+  Future<void> startOrJoinVideoCall() async {
+    final router = GoRouter.of(context);
+    final result = await showFutureLoadingDialog(
+      context: context,
+      future: () => room.joinLiveKitCall(),
+    );
+    final liveKitCredentials = result.result;
+    if (liveKitCredentials == null) {
+      Logs().e(
+        'Unable to start or join LiveKit Call',
+        result.error,
+        result.asError?.stackTrace,
+      );
+      return;
+    }
+    router.go(
+      '/rooms/${room.id}/call?url=${liveKitCredentials.url}&jwt=${liveKitCredentials.jwt}',
+    );
+  }
 
   Future<void> _cancelEditWithConfirmation() async {
     final originalText = editEvent!

@@ -6,13 +6,13 @@
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/unread_bubble.dart';
+import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/room_status_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/hover_builder.dart';
-import 'package:fluffychat/widgets/matrix.dart';
-import 'package:fluffychat/widgets/pulse_dot.dart';
+import 'package:fluffychat/widgets/pulsating_widget.dart';
 import 'package:fluffychat/widgets/typing_animation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
@@ -63,7 +63,7 @@ class ChatListItem extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final hasActiveGroupCall = room.hasActiveGroupCall(Matrix.of(context).voip);
+    final hasActiveGroupCall = room.hasActiveLiveKitCall;
 
     final needLastEventSender =
         lastEvent != null &&
@@ -247,8 +247,7 @@ class ChatListItem extends StatelessWidget {
               subtitle: Row(
                 children: hasActiveGroupCall
                     ? [
-                        PulseDot(
-                          animationDuration: Duration(seconds: 1),
+                        PulsatingWidget(
                           child: Icon(
                             Icons.circle,
                             color: theme.colorScheme.error,
