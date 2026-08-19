@@ -51,6 +51,11 @@ enum AppSettings<T> {
     'chat.fluffy.render_markdown_in_plain_messages',
     true,
   ),
+  homeRoomId<String>('chat.fluffy.home_room_id', ''),
+  freshConversationAfterMinutes<int>(
+    'chat.fluffy.fresh_conversation_after_minutes',
+    240,
+  ),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
   experimentalVoip<bool>('chat.fluffy.experimental_voip', false),
   shareKeysWith<String>('chat.fluffy.share_keys_with_2', 'all'),

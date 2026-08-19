@@ -27,6 +27,30 @@ class ChatInputRow extends StatelessWidget {
 
   const ChatInputRow(this.controller, {super.key});
 
+  /// Long-press or right-click on the send button: quick access to the
+  /// frequent bot commands, /clear first among them.
+  Future<void> _showComposerMenu(
+    BuildContext context,
+    Offset position,
+  ) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'fresh',
+          child: Text(L10n.of(context).startFreshConversation),
+        ),
+      ],
+    );
+    if (value == 'fresh') controller.startFreshConversation();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -373,15 +397,25 @@ class ChatInputRow extends StatelessWidget {
                               ),
                             ),
                           )
-                        : IconButton(
-                            key: Key('send_button'),
-                            tooltip: L10n.of(context).send,
-                            onPressed: controller.send,
-                            style: IconButton.styleFrom(
-                              backgroundColor: theme.bubbleColor,
-                              foregroundColor: theme.onBubbleColor,
+                        : GestureDetector(
+                            onLongPressStart: (details) => _showComposerMenu(
+                              context,
+                              details.globalPosition,
                             ),
-                            icon: const Icon(Icons.send_outlined),
+                            onSecondaryTapDown: (details) => _showComposerMenu(
+                              context,
+                              details.globalPosition,
+                            ),
+                            child: IconButton(
+                              key: Key('send_button'),
+                              tooltip: L10n.of(context).send,
+                              onPressed: controller.send,
+                              style: IconButton.styleFrom(
+                                backgroundColor: theme.bubbleColor,
+                                foregroundColor: theme.onBubbleColor,
+                              ),
+                              icon: const Icon(Icons.send_outlined),
+                            ),
                           ),
                   ),
                 ],

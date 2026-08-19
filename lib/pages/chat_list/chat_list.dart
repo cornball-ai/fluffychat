@@ -374,6 +374,21 @@ class ChatListController extends State<ChatList>
 
   StreamSubscription? _onRoomTagUpdate;
 
+  /// Once per app start: land in the home room, the rolling
+  /// conversation the app is "for". A deep link or notification that
+  /// already opened a chat wins over it.
+  static bool _homeRoomOpenedOnce = false;
+
+  void _maybeOpenHomeRoom() {
+    if (_homeRoomOpenedOnce) return;
+    _homeRoomOpenedOnce = true;
+    final id = AppSettings.homeRoomId.value;
+    if (id.isEmpty) return;
+    if (widget.activeChat != null) return;
+    if (Matrix.of(context).client.getRoomById(id) == null) return;
+    context.go('/rooms/$id');
+  }
+
   @override
   void initState() {
     _initReceiveSharingIntent();
@@ -389,6 +404,7 @@ class ChatListController extends State<ChatList>
         ).store.getString(_serverStoreNamespace);
         Matrix.of(context).backgroundPush?.setupPush(context);
         UpdateNotifier.showUpdateDialog(context);
+        _maybeOpenHomeRoom();
       }
 
       // Workaround for system UI overlay style not applied on app start
