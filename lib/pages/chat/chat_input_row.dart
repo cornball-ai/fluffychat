@@ -29,12 +29,8 @@ class ChatInputRow extends StatelessWidget {
 
   /// Long-press or right-click on the send button: quick access to the
   /// frequent bot commands, /clear first among them.
-  Future<void> _showComposerMenu(
-    BuildContext context,
-    Offset position,
-  ) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+  Future<void> _showComposerMenu(BuildContext context, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final value = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(

@@ -247,7 +247,6 @@
     "renderMarkdownInPlainMessages": "Render markdown in plain messages",
     "renderMarkdownInPlainMessagesDescription": "Messages without rich formatting are rendered as markdown. Useful for bots that send markdown as plain text.",
     "homeRoom": "Home room",
-    "homeRoomDescription": "Open this chat on launch. After a break, the first message starts a fresh conversation.",
     "homeRoomNotSet": "Not set",
     "homeRoomUnset": "Unset home room",
     "freshConversationHint": "Fresh conversation. Scroll up to continue the last one.",

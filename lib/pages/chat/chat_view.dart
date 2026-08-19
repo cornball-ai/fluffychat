@@ -437,21 +437,22 @@ class ChatView extends StatelessWidget {
                                                       .freshConversationArmed)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets
-                                                              .only(
-                                                        top: 4,
-                                                        bottom: 4,
-                                                      ),
+                                                          const EdgeInsets.only(
+                                                            top: 4,
+                                                            bottom: 4,
+                                                          ),
                                                       child: Text(
-                                                        L10n.of(context)
-                                                            .freshConversationHint,
-                                                        style: theme.textTheme
+                                                        L10n.of(
+                                                          context,
+                                                        ).freshConversationHint,
+                                                        style: theme
+                                                            .textTheme
                                                             .labelSmall
                                                             ?.copyWith(
-                                                          color: theme
-                                                              .colorScheme
-                                                              .secondary,
-                                                        ),
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .secondary,
+                                                            ),
                                                       ),
                                                     ),
                                                   ReplyDisplay(controller),

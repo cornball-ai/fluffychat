@@ -26,9 +26,7 @@ class SettingsChatController extends State<SettingsChat> {
   /// not-set label.
   String homeRoomLabel(BuildContext context) {
     final id = AppSettings.homeRoomId.value;
-    final room = id.isEmpty
-        ? null
-        : Matrix.of(context).client.getRoomById(id);
+    final room = id.isEmpty ? null : Matrix.of(context).client.getRoomById(id);
     if (room == null) return L10n.of(context).homeRoomNotSet;
     return room.getLocalizedDisplayname(MatrixLocals(L10n.of(context)));
   }
@@ -44,15 +42,10 @@ class SettingsChatController extends State<SettingsChat> {
       cancelLabel: L10n.of(context).cancel,
       actions: [
         if (AppSettings.homeRoomId.value.isNotEmpty)
-          AdaptiveModalAction(
-            label: L10n.of(context).homeRoomUnset,
-            value: '',
-          ),
+          AdaptiveModalAction(label: L10n.of(context).homeRoomUnset, value: ''),
         ...rooms.map(
           (room) => AdaptiveModalAction(
-            label: room.getLocalizedDisplayname(
-              MatrixLocals(L10n.of(context)),
-            ),
+            label: room.getLocalizedDisplayname(MatrixLocals(L10n.of(context))),
             value: room.id,
           ),
         ),
