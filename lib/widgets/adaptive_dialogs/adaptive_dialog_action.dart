@@ -14,18 +14,20 @@ class AdaptiveDialogAction extends StatelessWidget {
   final bool bigButtons;
   final BorderRadius? borderRadius;
 
-  static const BorderRadius topRadius = BorderRadius.only(
+  // Getters, not static finals: the radius follows the active theme variant,
+  // and a lazy static would freeze whichever one was loaded first.
+  static BorderRadius get topRadius => BorderRadius.only(
     topLeft: Radius.circular(AppConfig.borderRadius),
     topRight: Radius.circular(AppConfig.borderRadius),
-    bottomLeft: Radius.circular(2),
-    bottomRight: Radius.circular(2),
+    bottomLeft: const Radius.circular(2),
+    bottomRight: const Radius.circular(2),
   );
   static const BorderRadius centerRadius = BorderRadius.all(Radius.circular(2));
-  static const BorderRadius bottomRadius = BorderRadius.only(
+  static BorderRadius get bottomRadius => BorderRadius.only(
     bottomLeft: Radius.circular(AppConfig.borderRadius),
     bottomRight: Radius.circular(AppConfig.borderRadius),
-    topLeft: Radius.circular(2),
-    topRight: Radius.circular(2),
+    topLeft: const Radius.circular(2),
+    topRight: const Radius.circular(2),
   );
 
   const AdaptiveDialogAction({

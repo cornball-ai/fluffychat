@@ -7,6 +7,7 @@ import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/theme_variants.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/events/state_message.dart';
@@ -67,6 +68,104 @@ class SettingsStyleView extends StatelessWidget {
                     icon: const Icon(Icons.auto_mode_outlined),
                   ),
                 ],
+              ),
+            ),
+            Divider(color: theme.dividerColor),
+            ListTile(
+              title: Text(
+                'Theme:',
+                style: TextStyle(
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: ThemeVariants.all.map((variant) {
+                  final selected = variant.id == controller.currentVariant.id;
+                  final scheme = controller.previewScheme(
+                    variant,
+                    theme.brightness,
+                  );
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(AppConfig.borderRadius),
+                    onTap: () => controller.setThemeVariant(variant),
+                    child: Container(
+                      width: 156,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: scheme.surface,
+                        borderRadius: BorderRadius.circular(
+                          AppConfig.borderRadius,
+                        ),
+                        border: Border.all(
+                          width: selected ? 2 : 1,
+                          color: selected
+                              ? theme.colorScheme.primary
+                              : theme.dividerColor,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: .min,
+                        crossAxisAlignment: .start,
+                        children: [
+                          // A bubble drawn with the variant's own colours,
+                          // corner radius and typeface, so the card previews
+                          // the three knobs that carry most of the look.
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(
+                                variant.borderRadius,
+                              ),
+                            ),
+                            child: Text(
+                              variant.name,
+                              style: TextStyle(
+                                fontFamily: variant.fontFamily,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: variant.titleLetterSpacing,
+                                color: scheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: .start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  variant.description,
+                                  style: TextStyle(
+                                    fontFamily: variant.fontFamily,
+                                    fontSize: 12,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (selected)
+                                Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: theme.colorScheme.primary,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
             Divider(color: theme.dividerColor),

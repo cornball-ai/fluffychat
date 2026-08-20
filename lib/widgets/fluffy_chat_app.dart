@@ -64,36 +64,43 @@ class FluffyChatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThemeBuilder(
-      builder: (context, themeMode, primaryColor) => MaterialApp.router(
-        title: AppSettings.applicationName.value,
-        themeMode: themeMode,
-        theme: FluffyThemes.buildTheme(context, Brightness.light, primaryColor),
-        darkTheme: FluffyThemes.buildTheme(
-          context,
-          Brightness.dark,
-          primaryColor,
-        ),
-        scrollBehavior: CustomScrollBehavior(),
-        localizationsDelegates: [
-          ...L10n.localizationsDelegates,
-          ...GlobalMaterialLocalizations.delegates,
-          ...GlobalCupertinoLocalizations.delegates,
-        ],
-        supportedLocales: L10n.supportedLocales,
-        routerConfig: router,
-        builder: (context, child) => AppLockWidget(
-          pincode: appLockSettings.pincode,
-          useBiometrics: appLockSettings.useBiometrics,
-          isLoggedIn: clients.any((client) => client.isLogged()),
-          // Need a navigator above the Matrix widget for
-          // displaying dialogs
-          child: Matrix(
-            clients: clients,
-            store: store,
-            child: testWidget ?? child,
+      builder: (context, themeMode, primaryColor, themeVariant) =>
+          MaterialApp.router(
+            title: AppSettings.applicationName.value,
+            themeMode: themeMode,
+            theme: FluffyThemes.buildTheme(
+              context,
+              Brightness.light,
+              primaryColor,
+              themeVariant,
+            ),
+            darkTheme: FluffyThemes.buildTheme(
+              context,
+              Brightness.dark,
+              primaryColor,
+              themeVariant,
+            ),
+            scrollBehavior: CustomScrollBehavior(),
+            localizationsDelegates: [
+              ...L10n.localizationsDelegates,
+              ...GlobalMaterialLocalizations.delegates,
+              ...GlobalCupertinoLocalizations.delegates,
+            ],
+            supportedLocales: L10n.supportedLocales,
+            routerConfig: router,
+            builder: (context, child) => AppLockWidget(
+              pincode: appLockSettings.pincode,
+              useBiometrics: appLockSettings.useBiometrics,
+              isLoggedIn: clients.any((client) => client.isLogged()),
+              // Need a navigator above the Matrix widget for
+              // displaying dialogs
+              child: Matrix(
+                clients: clients,
+                store: store,
+                child: testWidget ?? child,
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 }
