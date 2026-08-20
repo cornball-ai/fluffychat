@@ -41,8 +41,25 @@ class AppKeyboardShortcuts extends StatelessWidget {
     FluffyChatApp.router.go('/rooms/${rooms[number - 1].id}');
   }
 
+  // DIAGNOSTIC (temporary): report every tab the framework receives
+  // and where primary focus is at that instant.
+  static bool _diagInstalled = false;
+
   @override
   Widget build(BuildContext context) {
+    if (!_diagInstalled) {
+      _diagInstalled = true;
+      HardwareKeyboard.instance.addHandler((event) {
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          // ignore: avoid_print
+          print(
+            '[keys] ${event.runtimeType} tab '
+            'primary=${FocusManager.instance.primaryFocus}',
+          );
+        }
+        return false;
+      });
+    }
     return CallbackShortcuts(
       bindings: {
         for (var i = 0; i < _digits.length; i++) ...{

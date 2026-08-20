@@ -493,6 +493,9 @@ class InputBar extends StatelessWidget {
           ),
       optionsViewBuilder: (c, onSelected, s) {
         final suggestions = s.toList();
+        // DIAGNOSTIC (temporary): confirm the overlay's live state.
+        // ignore: avoid_print
+        print('[inputbar] overlay building with ${suggestions.length}');
         return Material(
           elevation: theme.appBarTheme.scrolledUnderElevation ?? 4,
           shadowColor: theme.appBarTheme.shadowColor,
