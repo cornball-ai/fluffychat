@@ -178,8 +178,11 @@ class _Arcade extends ThemeVariant {
   String get id => 'arcade';
   @override
   String get name => 'Arcade';
+  // Says "fixed" because the colour grid below the picker genuinely does
+  // nothing while this is selected: the palette is written out here rather
+  // than seeded. A control that silently ignores you reads as broken.
   @override
-  String get description => 'Neon on black, always dark.';
+  String get description => 'Neon on black. Always dark, fixed colours.';
 
   @override
   Color get seed => _magenta;
