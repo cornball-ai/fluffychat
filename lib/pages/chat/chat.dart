@@ -182,6 +182,29 @@ class ChatController extends State<ChatPageWithRoom>
 
   bool _scrolledUp = false;
 
+  /// Armed when this is the home room and its last activity is older
+  /// than the fresh-conversation threshold: the first send prepends
+  /// /clear so the bot starts a fresh session. Scrolling up disarms it,
+  /// because reading back is how continuing an old conversation begins.
+  bool freshConversationArmed = false;
+
+  void _maybeArmFreshConversation() {
+    if (widget.room.id != AppSettings.homeRoomId.value) return;
+    final minutes = AppSettings.freshConversationAfterMinutes.value;
+    if (minutes <= 0) return;
+    final last = widget.room.lastEvent?.originServerTs;
+    if (last == null || DateTime.now().difference(last).inMinutes >= minutes) {
+      freshConversationArmed = true;
+    }
+  }
+
+  /// Sends /clear as plain text (the bot's session boundary) and
+  /// disarms the fresh-conversation flag.
+  void startFreshConversation() {
+    room.sendTextEvent('/clear', parseCommands: false);
+    setState(() => freshConversationArmed = false);
+  }
+
   bool get showScrollDownButton =>
       _scrolledUp || timeline?.allowNewEvent == false;
 
@@ -273,7 +296,12 @@ class ChatController extends State<ChatPageWithRoom>
     if (!scrollController.hasClients) return;
     if (timeline?.allowNewEvent == false ||
         scrollController.position.pixels > 0 && _scrolledUp == false) {
-      setState(() => _scrolledUp = true);
+      setState(() {
+        _scrolledUp = true;
+        // Reading back is a deliberate continuation; the next send
+        // must not clear the conversation.
+        freshConversationArmed = false;
+      });
     } else if (scrollController.position.pixels <= 0 && _scrolledUp == true) {
       setState(() => _scrolledUp = false);
       setReadMarker();
@@ -396,6 +424,7 @@ class ChatController extends State<ChatPageWithRoom>
     inputFocus.addListener(_inputFocusListener);
 
     _loadDraft();
+    _maybeArmFreshConversation();
     WidgetsBinding.instance.addPostFrameCallback(_shareItems);
     web.window.addEventListener('paste', _handleClipboardFilePasteWeb);
     super.initState();
@@ -686,22 +715,37 @@ class ChatController extends State<ChatPageWithRoom>
     final commandMatch = RegExp(r'^\/(\w+)').firstMatch(sendController.text);
     if (commandMatch != null &&
         !sendingClient.commands.keys.contains(commandMatch[1]!.toLowerCase())) {
-      final l10n = L10n.of(context);
-      final dialogResult = await showOkCancelAlertDialog(
-        context: context,
-        title: l10n.commandInvalid,
-        message: l10n.commandMissing(commandMatch[0]!),
-        okLabel: l10n.sendAsText,
-        cancelLabel: l10n.cancel,
-      );
-      if (dialogResult == OkCancelResult.cancel) return;
-      parseCommands = false;
+      // Commands the client does not know may still be commands for a
+      // bot in the room. With this setting they pass through as plain
+      // text without interrupting; bots parse them on their side.
+      if (AppSettings.sendUnknownCommandsAsText.value) {
+        parseCommands = false;
+      } else {
+        final l10n = L10n.of(context);
+        final dialogResult = await showOkCancelAlertDialog(
+          context: context,
+          title: l10n.commandInvalid,
+          message: l10n.commandMissing(commandMatch[0]!),
+          okLabel: l10n.sendAsText,
+          cancelLabel: l10n.cancel,
+        );
+        if (dialogResult == OkCancelResult.cancel) return;
+        parseCommands = false;
+      }
     }
 
     if (currentlyTyping) {
       typingCoolDown?.cancel();
       currentlyTyping = false;
       room.setTyping(false);
+    }
+
+    // The session boundary goes ahead of the message; the SDK's
+    // per-room send queue keeps the order.
+    if (freshConversationArmed) {
+      // ignore: unawaited_futures
+      room.sendTextEvent('/clear', parseCommands: false);
+      freshConversationArmed = false;
     }
 
     // ignore: unawaited_futures
@@ -1540,6 +1584,9 @@ class ChatController extends State<ChatPageWithRoom>
     room.client.getConfig();
 
     switch (choice) {
+      case AddPopupMenuActions.newConversation:
+        startFreshConversation();
+        return;
       case AddPopupMenuActions.image:
         sendFileAction(type: FileType.image);
         return;
@@ -1813,6 +1860,7 @@ class ChatController extends State<ChatPageWithRoom>
 }
 
 enum AddPopupMenuActions {
+  newConversation,
   image,
   video,
   file,

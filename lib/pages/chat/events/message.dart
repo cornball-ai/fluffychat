@@ -27,6 +27,7 @@ import 'package:matrix/matrix.dart';
 import 'package:swipe_to_action/swipe_to_action.dart';
 
 import '../../../config/app_config.dart';
+import 'conversation_divider.dart';
 import 'message_actions.dart';
 import 'message_content.dart';
 import 'message_reactions.dart';
@@ -112,6 +113,15 @@ class Message extends StatelessWidget {
       return StateMessage(event);
     }
 
+    // A /clear (or /reset, /new) command is a session boundary for the
+    // bots in the room, not a message: render it as a labeled rule.
+    if (event.type == EventTypes.Message &&
+        event.messageType == MessageTypes.Text &&
+        !event.redacted &&
+        isClearCommandBody(event.body)) {
+      return const ConversationDivider();
+    }
+
     final client = Matrix.of(context).client;
     final ownMessage = event.senderId == client.userID;
     final alignment = ownMessage ? Alignment.topRight : Alignment.topLeft;
@@ -153,7 +163,7 @@ class Message extends StatelessWidget {
 
     final displayEvent = event.getDisplayEvent(timeline);
     const hardCorner = Radius.circular(3);
-    const roundedCorner = Radius.circular(AppConfig.borderRadius);
+    final roundedCorner = Radius.circular(AppConfig.borderRadius);
     final borderRadius = BorderRadius.only(
       topLeft: !ownMessage ? hardCorner : roundedCorner,
       topRight: ownMessage && nextEventSameSender ? hardCorner : roundedCorner,

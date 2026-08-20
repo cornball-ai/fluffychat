@@ -9,6 +9,7 @@ import 'package:fluffychat/config/routes.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/app_keyboard_shortcuts.dart';
 import 'package:fluffychat/widgets/app_lock.dart';
 import 'package:fluffychat/widgets/theme_builder.dart';
 import 'package:go_router/go_router.dart';
@@ -64,36 +65,45 @@ class FluffyChatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThemeBuilder(
-      builder: (context, themeMode, primaryColor) => MaterialApp.router(
-        title: AppSettings.applicationName.value,
-        themeMode: themeMode,
-        theme: FluffyThemes.buildTheme(context, Brightness.light, primaryColor),
-        darkTheme: FluffyThemes.buildTheme(
-          context,
-          Brightness.dark,
-          primaryColor,
-        ),
-        scrollBehavior: CustomScrollBehavior(),
-        localizationsDelegates: [
-          ...L10n.localizationsDelegates,
-          ...GlobalMaterialLocalizations.delegates,
-          ...GlobalCupertinoLocalizations.delegates,
-        ],
-        supportedLocales: L10n.supportedLocales,
-        routerConfig: router,
-        builder: (context, child) => AppLockWidget(
-          pincode: appLockSettings.pincode,
-          useBiometrics: appLockSettings.useBiometrics,
-          isLoggedIn: clients.any((client) => client.isLogged()),
-          // Need a navigator above the Matrix widget for
-          // displaying dialogs
-          child: Matrix(
-            clients: clients,
-            store: store,
-            child: testWidget ?? child,
+      builder: (context, themeMode, primaryColor, themeVariant) =>
+          MaterialApp.router(
+            title: AppSettings.applicationName.value,
+            themeMode: themeMode,
+            theme: FluffyThemes.buildTheme(
+              context,
+              Brightness.light,
+              primaryColor,
+              themeVariant,
+            ),
+            darkTheme: FluffyThemes.buildTheme(
+              context,
+              Brightness.dark,
+              primaryColor,
+              themeVariant,
+            ),
+            scrollBehavior: CustomScrollBehavior(),
+            localizationsDelegates: [
+              ...L10n.localizationsDelegates,
+              ...GlobalMaterialLocalizations.delegates,
+              ...GlobalCupertinoLocalizations.delegates,
+            ],
+            supportedLocales: L10n.supportedLocales,
+            routerConfig: router,
+            builder: (context, child) => AppLockWidget(
+              pincode: appLockSettings.pincode,
+              useBiometrics: appLockSettings.useBiometrics,
+              isLoggedIn: clients.any((client) => client.isLogged()),
+              // Need a navigator above the Matrix widget for
+              // displaying dialogs
+              child: Matrix(
+                clients: clients,
+                store: store,
+                child: AppKeyboardShortcuts(
+                  child: testWidget ?? child ?? const SizedBox.shrink(),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 }

@@ -5,6 +5,8 @@
 
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/theme_variant.dart';
+import 'package:fluffychat/config/theme_variants.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -42,20 +44,30 @@ abstract class FluffyThemes {
 
   static ThemeData buildTheme(
     BuildContext context,
-    Brightness brightness, [
+    Brightness requestedBrightness, [
     Color? seed,
+    ThemeVariant? variant,
   ]) {
-    final colorScheme = ColorScheme.fromSeed(
-      brightness: brightness,
-      seedColor: seed ?? Color(AppSettings.colorSchemeSeedInt.value),
-      dynamicSchemeVariant: DynamicSchemeVariant.rainbow,
+    final themeVariant = variant ?? ThemeVariants.fallback;
+    final brightness = themeVariant.resolveBrightness(requestedBrightness);
+    final colorScheme = themeVariant.colorScheme(
+      brightness,
+      seed ?? Color(AppSettings.colorSchemeSeedInt.value),
     );
+
+    // Roughly seventy widgets read shape and message size straight off
+    // AppConfig rather than off the theme, so mirroring them here is what
+    // makes those knobs switchable without editing every call site.
+    AppConfig.borderRadius = themeVariant.borderRadius;
+    AppConfig.messageFontSize = themeVariant.messageFontSize;
+
     final isColumnMode = FluffyThemes.isColumnMode(context);
     final dividerColor = brightness == Brightness.dark
         ? colorScheme.surfaceContainerHighest
         : colorScheme.surfaceContainer;
-    return ThemeData(
-      visualDensity: VisualDensity.standard,
+    final theme = ThemeData(
+      visualDensity: themeVariant.visualDensity,
+      fontFamily: themeVariant.fontFamily,
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colorScheme,
@@ -72,7 +84,7 @@ abstract class FluffyThemes {
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppConfig.borderRadius / 2),
+          borderRadius: BorderRadius.circular(themeVariant.inputBorderRadius),
         ),
         contentPadding: const EdgeInsets.all(12),
       ),
@@ -81,7 +93,7 @@ abstract class FluffyThemes {
         backgroundColor: colorScheme.surfaceContainer,
         side: BorderSide.none,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConfig.borderRadius),
+          borderRadius: BorderRadius.circular(themeVariant.borderRadius),
         ),
       ),
       appBarTheme: AppBarTheme(
@@ -104,7 +116,7 @@ abstract class FluffyThemes {
           side: BorderSide(width: 1, color: colorScheme.primary),
           shape: RoundedRectangleBorder(
             side: BorderSide(color: colorScheme.primary),
-            borderRadius: BorderRadius.circular(AppConfig.borderRadius / 2),
+            borderRadius: BorderRadius.circular(themeVariant.inputBorderRadius),
           ),
         ),
       ),
@@ -129,6 +141,10 @@ abstract class FluffyThemes {
           textStyle: const TextStyle(fontSize: 16),
         ),
       ),
+    );
+
+    return themeVariant.decorate(
+      theme.copyWith(textTheme: themeVariant.applyTypography(theme.textTheme)),
     );
   }
 }

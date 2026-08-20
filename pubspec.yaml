@@ -108,6 +108,26 @@ flutter:
     - assets/logo/mini/
     - assets/sounds/
     - assets/vodozemac/
+  # Typefaces for the theme variants in lib/config/theme_variants.dart.
+  # All three are SIL OFL 1.1; see REUSE.toml and LICENSES/OFL-1.1.txt.
+  fonts:
+    - family: Cantarell
+      fonts:
+        - asset: assets/fonts/Cantarell-Regular.otf
+        - asset: assets/fonts/Cantarell-Bold.otf
+          weight: 700
+    - family: Comfortaa
+      fonts:
+        - asset: assets/fonts/Comfortaa-Regular.ttf
+        - asset: assets/fonts/Comfortaa-Bold.ttf
+          weight: 700
+    - family: Caladea
+      fonts:
+        - asset: assets/fonts/Caladea-Regular.ttf
+        - asset: assets/fonts/Caladea-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Caladea-Italic.ttf
+          style: italic
 
 hooks:
   user_defines:

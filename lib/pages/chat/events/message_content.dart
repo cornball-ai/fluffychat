@@ -12,6 +12,10 @@ import 'package:fluffychat/pages/chat/events/video_player.dart';
 import 'package:fluffychat/pages/image_viewer/image_viewer.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
+// The SDK's send-side markdown converter, reused for received plain
+// bodies so both directions render identically.
+// ignore: implementation_imports
+import 'package:matrix/src/utils/markdown.dart';
 
 import '../../../config/app_config.dart';
 import '../../../utils/event_checkbox_extension.dart';
@@ -48,7 +52,7 @@ class MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const fontSize = AppConfig.messageFontSize;
+    final fontSize = AppConfig.messageFontSize;
     final buttonTextColor = textColor;
     switch (event.type) {
       case EventTypes.Message:
@@ -174,6 +178,17 @@ class MessageContent extends StatelessWidget {
             var html = AppSettings.renderHtml.value && event.isRichMessage
                 ? event.formattedText
                 : event.body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+            // Bots and bridges often send markdown as a plain body with
+            // no formatted_body. Rendering it through the same converter
+            // the SDK uses at send time gives those messages the
+            // formatting the sender meant, and leaves ordinary plain
+            // text looking unchanged.
+            if (!event.isRichMessage &&
+                event.messageType != MessageTypes.Emote &&
+                AppSettings.renderHtml.value &&
+                AppSettings.renderMarkdownInPlainMessages.value) {
+              html = markdown(event.body);
+            }
             if (event.messageType == MessageTypes.Emote) {
               html = '* $html';
             }

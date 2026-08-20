@@ -43,6 +43,19 @@ enum AppSettings<T> {
   sendPublicReadReceipts<bool>('chat.fluffy.send_public_read_receipts', true),
   swipeRightToLeftToReply<bool>('chat.fluffy.swipeRightToLeftToReply', true),
   sendOnEnter<bool>('chat.fluffy.send_on_enter', false),
+  sendUnknownCommandsAsText<bool>(
+    'chat.fluffy.send_unknown_commands_as_text',
+    true,
+  ),
+  renderMarkdownInPlainMessages<bool>(
+    'chat.fluffy.render_markdown_in_plain_messages',
+    true,
+  ),
+  homeRoomId<String>('chat.fluffy.home_room_id', ''),
+  freshConversationAfterMinutes<int>(
+    'chat.fluffy.fresh_conversation_after_minutes',
+    240,
+  ),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
   experimentalVoip<bool>('chat.fluffy.experimental_voip', false),
   shareKeysWith<String>('chat.fluffy.share_keys_with_2', 'all'),
@@ -56,6 +69,8 @@ enum AppSettings<T> {
   defaultHomeserver<String>('chat.fluffy.default_homeserver', 'matrix.org'),
   // colorSchemeSeed stored as ARGB int
   colorSchemeSeedInt<int>('chat.fluffy.color_scheme_seed', 0xFF5625BA),
+  // ThemeVariant.id; an unknown id falls back to ThemeVariants.fallback
+  themeVariant<String>('chat.fluffy.theme_variant', 'fluffy'),
   emojiSuggestionLocale<String>('emoji_suggestion_locale', ''),
   enableSoftLogout<bool>('chat.fluffy.enable_soft_logout', true),
   enableMatrixNativeOIDC<bool>('chat.fluffy.enable_matrix_native_oidc', true),
