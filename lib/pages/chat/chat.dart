@@ -11,11 +11,13 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_view.dart';
 import 'package:fluffychat/pages/chat/event_info_dialog.dart';
+import 'package:fluffychat/pages/chat/events/message_actions.dart';
 import 'package:fluffychat/pages/chat/start_poll_bottom_sheet.dart';
 import 'package:fluffychat/pages/chat/trust_user_key_dialog.dart';
 import 'package:fluffychat/pages/chat/utils/web_file_to_x_file.dart';
@@ -1089,6 +1091,147 @@ class ChatController extends State<ChatPageWithRoom>
     final clients = Matrix.of(context).currentBundle!;
     clients.removeWhere((c) => c!.getRoomById(roomId) == null);
     return clients;
+  }
+
+  /// The full action list for one message.
+  ///
+  /// Reads the can*SelectedEvents guards, so [showMessageActions] selects the
+  /// event before calling this. That is why none of the guards or the action
+  /// methods below had to be rewritten to take an event: they still see the
+  /// selection they were written against.
+  List<MessageAction> _messageActionsFor(Event event) {
+    final l10n = L10n.of(context);
+    final isOwn = event.senderId == room.client.userID;
+    return [
+      if (room.canSendDefaultMessages && !isArchived)
+        MessageAction(
+          icon: Icons.reply_outlined,
+          label: l10n.reply,
+          onTap: () => replyAction(replyTo: event),
+        ),
+      if (!isArchived)
+        MessageAction(
+          icon: Icons.forward_outlined,
+          label: l10n.forward,
+          onTap: forwardEventsAction,
+        ),
+      if (canEditSelectedEvents)
+        MessageAction(
+          icon: Icons.edit_outlined,
+          label: l10n.edit,
+          onTap: editSelectedEventAction,
+        ),
+      if (canSaveSelectedEvent)
+        MessageAction(
+          icon: Icons.download_outlined,
+          label: l10n.saveFile,
+          onTap: () => saveSelectedEvent(context),
+        ),
+      MessageAction(
+        icon: Icons.copy_outlined,
+        label: l10n.copy,
+        onTap: copyEventsAction,
+      ),
+      MessageAction(
+        icon: Icons.check_circle_outlined,
+        label: l10n.select,
+        onTap: () => onSelectMessage(event),
+      ),
+      MessageAction(
+        icon: Icons.info_outline,
+        label: l10n.messageInfo,
+        onTap: () => showEventInfo(event),
+      ),
+      if (canPinSelectedEvents)
+        MessageAction(
+          icon: Icons.push_pin_outlined,
+          label: room.pinnedEventIds.contains(event.eventId)
+              ? l10n.unpin
+              : l10n.pin,
+          onTap: pinEvent,
+        ),
+      if (!isOwn && event.status.isSent)
+        MessageAction(
+          icon: Icons.shield_outlined,
+          label: l10n.reportMessage,
+          onTap: reportEventAction,
+        ),
+      if (canRedactSelectedEvents)
+        MessageAction(
+          icon: Icons.delete_outlined,
+          label: l10n.redactMessage,
+          onTap: redactEventsAction,
+          isDestructive: true,
+        ),
+    ];
+  }
+
+  /// Opens the message action list: a menu beside the bubble on desktop, the
+  /// dimmed long-press sheet on mobile.
+  Future<void> showMessageActions(Event event, Rect anchor) async {
+    setState(() {
+      selectedEvents
+        ..clear()
+        ..add(event);
+    });
+    final actions = _messageActionsFor(event);
+
+    final MessageAction? chosen;
+    if (PlatformInfos.isMobile) {
+      chosen = await showMessageActionsSheet(
+        context: context,
+        messageRect: anchor,
+        actions: actions,
+        quickReactions: AppConfig.defaultReactions.toList(),
+        onReact: (emoji) => room.sendReaction(event.eventId, emoji),
+        onMoreReactions: () async {
+          final emoji = await pickCustomReaction(context);
+          if (emoji == null) return;
+          await room.sendReaction(event.eventId, emoji);
+        },
+      );
+    } else {
+      final overlay =
+          Overlay.of(context).context.findRenderObject() as RenderBox;
+      chosen = await showMenu<MessageAction>(
+        context: context,
+        position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+        items: actions
+            .map(
+              (action) => PopupMenuItem(
+                value: action,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    action.icon,
+                    color: action.isDestructive
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
+                  title: Text(
+                    action.label,
+                    style: TextStyle(
+                      color: action.isDestructive
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    if (!mounted) return;
+    // Only drop the selection when nothing was picked. The actions clear it
+    // themselves, and several of them await a confirmation dialog first, so
+    // clearing here unconditionally would empty the list out from under them.
+    if (chosen == null) {
+      setState(() => selectedEvents.clear());
+      return;
+    }
+    chosen.onTap();
   }
 
   bool get canRedactSelectedEvents {
