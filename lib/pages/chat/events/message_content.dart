@@ -52,7 +52,7 @@ class MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const fontSize = AppConfig.messageFontSize;
+    final fontSize = AppConfig.messageFontSize;
     final buttonTextColor = textColor;
     switch (event.type) {
       case EventTypes.Message:
