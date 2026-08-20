@@ -33,6 +33,12 @@ bool _vodozemacInitialized = false;
 bool isIntegrationTest = false;
 
 void main(List<String> args) => runZonedGuarded(() async {
+  // DIAGNOSTIC (temporary): prove which build is running, first thing.
+  // ignore: avoid_print
+  print(
+    '[cornball] build '
+    '${const String.fromEnvironment('CORNBALL_BUILD', defaultValue: 'unstamped')}',
+  );
   // Forward Flutter errors to global error reporter
   FlutterError.onError = kDebugMode
       ? FlutterError.dumpErrorToConsole
