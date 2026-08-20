@@ -155,7 +155,9 @@ class InputBar extends StatelessWidget {
         }
       }
     }
-    final userMatch = RegExp(r'(?:\s|^)@([-\w]+)$').firstMatch(searchText);
+    // `*` not `+`: a bare @ pops the full member list, Signal-style,
+    // and the list narrows as the name is typed.
+    final userMatch = RegExp(r'(?:\s|^)@([-\w]*)$').firstMatch(searchText);
     if (userMatch != null) {
       final userSearch = userMatch[1]!.toLowerCase();
       for (final user in room.getParticipants()) {
