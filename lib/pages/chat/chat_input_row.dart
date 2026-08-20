@@ -167,6 +167,27 @@ class ChatInputRow extends StatelessWidget {
                       iconColor: theme.colorScheme.onPrimaryContainer,
                       onSelected: controller.onAddPopupMenuButtonSelected,
                       itemBuilder: (BuildContext context) => [
+                        // First, and above the attachment actions: with the
+                        // bots this is the most-used entry in the menu, and
+                        // the send button's long-press was too hidden to be
+                        // the only way to reach it.
+                        PopupMenuItem(
+                          value: AddPopupMenuActions.newConversation,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  theme.colorScheme.onPrimaryContainer,
+                              foregroundColor:
+                                  theme.colorScheme.primaryContainer,
+                              child: const Icon(Icons.restart_alt_outlined),
+                            ),
+                            title: Text(
+                              L10n.of(context).startFreshConversation,
+                            ),
+                            contentPadding: const EdgeInsets.all(0),
+                          ),
+                        ),
+                        PopupMenuDivider(),
                         if (PlatformInfos.isMobile)
                           PopupMenuItem(
                             value: AddPopupMenuActions.location,

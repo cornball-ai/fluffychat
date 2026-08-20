@@ -1441,6 +1441,9 @@ class ChatController extends State<ChatPageWithRoom>
     room.client.getConfig();
 
     switch (choice) {
+      case AddPopupMenuActions.newConversation:
+        startFreshConversation();
+        return;
       case AddPopupMenuActions.image:
         sendFileAction(type: FileType.image);
         return;
@@ -1714,6 +1717,7 @@ class ChatController extends State<ChatPageWithRoom>
 }
 
 enum AddPopupMenuActions {
+  newConversation,
   image,
   video,
   file,
