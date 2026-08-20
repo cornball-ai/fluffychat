@@ -89,7 +89,11 @@ void main() {
     /// Builds under a real BuildContext, which buildTheme needs for its
     /// column-mode media query. No Matrix provider is involved, so this
     /// settles where upstream's own widget tests do not.
-    Future<ThemeData> build(WidgetTester tester, variant) async {
+    Future<ThemeData> build(
+      WidgetTester tester,
+      variant, [
+      Brightness requested = Brightness.light,
+    ]) async {
       late ThemeData built;
       await tester.pumpWidget(
         MaterialApp(
@@ -97,7 +101,7 @@ void main() {
             builder: (context) {
               built = FluffyThemes.buildTheme(
                 context,
-                Brightness.light,
+                requested,
                 variant.seed,
                 variant,
               );
@@ -152,6 +156,49 @@ void main() {
       expect(AppConfig.borderRadius, 18.0);
       expect(AppConfig.messageFontSize, 16.0);
       expect(theme.visualDensity, VisualDensity.standard);
+    });
+
+    testWidgets('a pinned variant ignores the light/dark switch', (
+      tester,
+    ) async {
+      final pinned = ThemeVariants.all
+          .where(
+            (variant) =>
+                variant.resolveBrightness(Brightness.light) != Brightness.light,
+          )
+          .toList();
+      expect(
+        pinned,
+        isNotEmpty,
+        reason: 'no variant pins its brightness, so this proves nothing',
+      );
+      // Quiet failure: drop resolveBrightness from buildTheme and a pinned
+      // variant simply renders light in light mode, raising nothing.
+      for (final variant in pinned) {
+        for (final requested in Brightness.values) {
+          final theme = await build(tester, variant, requested);
+          expect(
+            theme.brightness,
+            variant.resolveBrightness(requested),
+            reason: '${variant.id} did not pin its brightness',
+          );
+        }
+      }
+    });
+
+    testWidgets('scheme and theme brightness never disagree', (tester) async {
+      // Material reads text colours off ThemeData.brightness and surfaces off
+      // the scheme, so a mismatch is dark text on a dark ground.
+      for (final variant in ThemeVariants.all) {
+        for (final requested in Brightness.values) {
+          final theme = await build(tester, variant, requested);
+          expect(
+            theme.colorScheme.brightness,
+            theme.brightness,
+            reason: '${variant.id} disagrees with its own colour scheme',
+          );
+        }
+      }
     });
 
     testWidgets('variants are actually distinguishable from one another', (

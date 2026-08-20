@@ -34,6 +34,13 @@ abstract class ThemeVariant {
 
   DynamicSchemeVariant get schemeVariant => DynamicSchemeVariant.tonalSpot;
 
+  /// Some looks only hold together at one brightness. Returning a fixed
+  /// value makes the variant ignore the light/dark switch. buildTheme feeds
+  /// the result to both the colour scheme and ThemeData.brightness, so the
+  /// two cannot drift apart and leave Material picking text colours for the
+  /// wrong background.
+  Brightness resolveBrightness(Brightness requested) => requested;
+
   ColorScheme colorScheme(Brightness brightness, Color seedColor) =>
       ColorScheme.fromSeed(
         brightness: brightness,

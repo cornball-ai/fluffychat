@@ -14,9 +14,17 @@ abstract class ThemeVariants {
   static const ThemeVariant slate = _Slate();
   static const ThemeVariant paper = _Paper();
   static const ThemeVariant pillow = _Pillow();
+  static const ThemeVariant arcade = _Arcade();
 
   /// Picker order.
-  static const List<ThemeVariant> all = [fluffy, console, slate, paper, pillow];
+  static const List<ThemeVariant> all = [
+    fluffy,
+    console,
+    slate,
+    paper,
+    pillow,
+    arcade,
+  ];
 
   /// Used for an unset or unrecognised stored id, so dropping a variant
   /// degrades to the stock look instead of crashing on next launch.
@@ -148,6 +156,129 @@ class _Paper extends ThemeVariant {
       surfaceTintColor: Colors.transparent,
     ),
   );
+}
+
+/// Neon on near-black, after the ARCADE skin in the mente app. The only
+/// variant that hand-authors its palette instead of seeding one: Material's
+/// dark surfaces are grey, and grey is the one thing this look cannot have.
+/// It also pins itself to dark, so the light/dark switch does not take the
+/// black away underneath it.
+class _Arcade extends ThemeVariant {
+  const _Arcade();
+
+  static const Color _magenta = Color(0xFFFF2E97);
+  static const Color _cyan = Color(0xFF00EAFF);
+  static const Color _neon = Color(0xFF39FF14);
+  static const Color _void = Color(0xFF0A0510);
+  static const Color _panel = Color(0xFF170A24);
+  static const Color _line = Color(0xFF6A2B8F);
+  static const Color _ice = Color(0xFFEAFCFF);
+
+  @override
+  String get id => 'arcade';
+  @override
+  String get name => 'Arcade';
+  @override
+  String get description => 'Neon on black, always dark.';
+
+  @override
+  Color get seed => _magenta;
+
+  @override
+  Brightness resolveBrightness(Brightness requested) => Brightness.dark;
+
+  @override
+  ColorScheme colorScheme(Brightness brightness, Color seedColor) =>
+      ColorScheme.fromSeed(
+        brightness: Brightness.dark,
+        seedColor: _magenta,
+        dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
+      ).copyWith(
+        surface: _void,
+        onSurface: _ice,
+        onSurfaceVariant: const Color(0xFFC9A6E0),
+        surfaceContainerLowest: const Color(0xFF06030A),
+        surfaceContainerLow: const Color(0xFF120720),
+        surfaceContainer: _panel,
+        surfaceContainerHigh: const Color(0xFF1F0E31),
+        surfaceContainerHighest: const Color(0xFF2A1440),
+        primary: _magenta,
+        onPrimary: const Color(0xFF17000B),
+        primaryContainer: const Color(0xFF7A0048),
+        onPrimaryContainer: const Color(0xFFFFD9E9),
+        secondary: _cyan,
+        onSecondary: const Color(0xFF00212A),
+        secondaryContainer: const Color(0xFF00404F),
+        onSecondaryContainer: const Color(0xFFB8F6FF),
+        tertiary: _neon,
+        onTertiary: const Color(0xFF07240A),
+        tertiaryContainer: const Color(0xFF10240A),
+        onTertiaryContainer: const Color(0xFFB7FFA8),
+        error: const Color(0xFFFF2E2E),
+        onError: const Color(0xFF2A0808),
+        outline: _line,
+        outlineVariant: const Color(0xFF43195C),
+      );
+
+  @override
+  double? get titleLetterSpacing => 1.1;
+  @override
+  FontWeight? get titleWeight => FontWeight.w900;
+
+  @override
+  double get borderRadius => 2.0;
+  @override
+  double get inputBorderRadius => 2.0;
+
+  @override
+  ThemeData decorate(ThemeData base) {
+    final colorScheme = base.colorScheme;
+    return base.copyWith(
+      dividerColor: _line,
+      scaffoldBackgroundColor: _void,
+      chipTheme: base.chipTheme.copyWith(
+        backgroundColor: Colors.transparent,
+        side: const BorderSide(color: _cyan),
+        shape: const RoundedRectangleBorder(),
+      ),
+      appBarTheme: base.appBarTheme.copyWith(
+        backgroundColor: _void,
+        foregroundColor: _cyan,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _magenta,
+          foregroundColor: const Color(0xFF17000B),
+          elevation: 0,
+          padding: const EdgeInsets.all(16),
+          shape: const RoundedRectangleBorder(),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _cyan,
+          side: const BorderSide(width: 1, color: _cyan),
+          shape: const RoundedRectangleBorder(),
+        ),
+      ),
+      floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
+        backgroundColor: _magenta,
+        foregroundColor: const Color(0xFF17000B),
+        shape: const RoundedRectangleBorder(),
+      ),
+      progressIndicatorTheme: base.progressIndicatorTheme.copyWith(
+        color: _neon,
+        refreshBackgroundColor: colorScheme.surfaceContainer,
+      ),
+    );
+  }
 }
 
 /// The opposite pole from Console: round, soft and loud.

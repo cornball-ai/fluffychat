@@ -44,11 +44,12 @@ abstract class FluffyThemes {
 
   static ThemeData buildTheme(
     BuildContext context,
-    Brightness brightness, [
+    Brightness requestedBrightness, [
     Color? seed,
     ThemeVariant? variant,
   ]) {
     final themeVariant = variant ?? ThemeVariants.fallback;
+    final brightness = themeVariant.resolveBrightness(requestedBrightness);
     final colorScheme = themeVariant.colorScheme(
       brightness,
       seed ?? Color(AppSettings.colorSchemeSeedInt.value),
