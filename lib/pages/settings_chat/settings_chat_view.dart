@@ -75,6 +75,12 @@ class SettingsChatView extends StatelessWidget {
                 ).renderMarkdownInPlainMessagesDescription,
                 setting: AppSettings.renderMarkdownInPlainMessages,
               ),
+              ListTile(
+                title: Text(L10n.of(context).homeRoom),
+                subtitle: Text(controller.homeRoomLabel(context)),
+                trailing: const Icon(Icons.chevron_right_outlined),
+                onTap: controller.setHomeRoom,
+              ),
               SettingsSwitchListTile.adaptive(
                 title: L10n.of(context).swipeRightToLeftToReply,
                 setting: AppSettings.swipeRightToLeftToReply,

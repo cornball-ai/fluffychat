@@ -27,6 +27,26 @@ class ChatInputRow extends StatelessWidget {
 
   const ChatInputRow(this.controller, {super.key});
 
+  /// Long-press or right-click on the send button: quick access to the
+  /// frequent bot commands, /clear first among them.
+  Future<void> _showComposerMenu(BuildContext context, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'fresh',
+          child: Text(L10n.of(context).startFreshConversation),
+        ),
+      ],
+    );
+    if (value == 'fresh') controller.startFreshConversation();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -147,6 +167,27 @@ class ChatInputRow extends StatelessWidget {
                       iconColor: theme.colorScheme.onPrimaryContainer,
                       onSelected: controller.onAddPopupMenuButtonSelected,
                       itemBuilder: (BuildContext context) => [
+                        // First, and above the attachment actions: with the
+                        // bots this is the most-used entry in the menu, and
+                        // the send button's long-press was too hidden to be
+                        // the only way to reach it.
+                        PopupMenuItem(
+                          value: AddPopupMenuActions.newConversation,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  theme.colorScheme.onPrimaryContainer,
+                              foregroundColor:
+                                  theme.colorScheme.primaryContainer,
+                              child: const Icon(Icons.restart_alt_outlined),
+                            ),
+                            title: Text(
+                              L10n.of(context).startFreshConversation,
+                            ),
+                            contentPadding: const EdgeInsets.all(0),
+                          ),
+                        ),
+                        PopupMenuDivider(),
                         if (PlatformInfos.isMobile)
                           PopupMenuItem(
                             value: AddPopupMenuActions.location,
@@ -373,15 +414,25 @@ class ChatInputRow extends StatelessWidget {
                               ),
                             ),
                           )
-                        : IconButton(
-                            key: Key('send_button'),
-                            tooltip: L10n.of(context).send,
-                            onPressed: controller.send,
-                            style: IconButton.styleFrom(
-                              backgroundColor: theme.bubbleColor,
-                              foregroundColor: theme.onBubbleColor,
+                        : GestureDetector(
+                            onLongPressStart: (details) => _showComposerMenu(
+                              context,
+                              details.globalPosition,
                             ),
-                            icon: const Icon(Icons.send_outlined),
+                            onSecondaryTapDown: (details) => _showComposerMenu(
+                              context,
+                              details.globalPosition,
+                            ),
+                            child: IconButton(
+                              key: Key('send_button'),
+                              tooltip: L10n.of(context).send,
+                              onPressed: controller.send,
+                              style: IconButton.styleFrom(
+                                backgroundColor: theme.bubbleColor,
+                                foregroundColor: theme.onBubbleColor,
+                              ),
+                              icon: const Icon(Icons.send_outlined),
+                            ),
                           ),
                   ),
                 ],

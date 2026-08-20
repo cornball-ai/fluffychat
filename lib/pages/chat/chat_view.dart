@@ -433,6 +433,28 @@ class ChatView extends StatelessWidget {
                                             : Column(
                                                 mainAxisSize: .min,
                                                 children: [
+                                                  if (controller
+                                                      .freshConversationArmed)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4,
+                                                            bottom: 4,
+                                                          ),
+                                                      child: Text(
+                                                        L10n.of(
+                                                          context,
+                                                        ).freshConversationHint,
+                                                        style: theme
+                                                            .textTheme
+                                                            .labelSmall
+                                                            ?.copyWith(
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .secondary,
+                                                            ),
+                                                      ),
+                                                    ),
                                                   ReplyDisplay(controller),
                                                   ChatInputRow(controller),
                                                   ChatEmojiPicker(controller),
