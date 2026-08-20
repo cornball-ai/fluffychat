@@ -25,6 +25,7 @@ import 'package:swipe_to_action/swipe_to_action.dart';
 
 import '../../../config/app_config.dart';
 import '../sticker_picker_dialog.dart';
+import 'conversation_divider.dart';
 import 'message_content.dart';
 import 'message_reactions.dart';
 import 'reply_content.dart';
@@ -101,6 +102,15 @@ class Message extends StatelessWidget {
     if (event.type == EventTypes.Message &&
         event.messageType == EventTypes.KeyVerificationRequest) {
       return StateMessage(event);
+    }
+
+    // A /clear (or /reset, /new) command is a session boundary for the
+    // bots in the room, not a message: render it as a labeled rule.
+    if (event.type == EventTypes.Message &&
+        event.messageType == MessageTypes.Text &&
+        !event.redacted &&
+        isClearCommandBody(event.body)) {
+      return const ConversationDivider();
     }
 
     final client = Matrix.of(context).client;
