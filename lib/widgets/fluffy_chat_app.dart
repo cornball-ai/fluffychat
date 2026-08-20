@@ -9,6 +9,7 @@ import 'package:fluffychat/config/routes.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/app_keyboard_shortcuts.dart';
 import 'package:fluffychat/widgets/app_lock.dart';
 import 'package:fluffychat/widgets/layouts/call_overlay.dart';
 import 'package:fluffychat/widgets/theme_builder.dart';
@@ -92,7 +93,9 @@ class FluffyChatApp extends StatelessWidget {
             clients: clients,
             store: store,
             child: CallOverlay(
-              child: testWidget ?? child ?? const SizedBox.shrink(),
+              child: AppKeyboardShortcuts(
+                child: testWidget ?? child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),

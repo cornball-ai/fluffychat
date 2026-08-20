@@ -221,6 +221,16 @@ class ChatListController extends State<ChatList>
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
 
+  /// Bumped by the global ctrl+F shortcut, which sits above the router and
+  /// so has no other way to reach this State. Only a mounted controller
+  /// answers, which is the behaviour we want: on a narrow layout with a chat
+  /// open the list is not built at all, so there is no field to focus.
+  static final ValueNotifier<int> searchRequests = ValueNotifier(0);
+
+  void _onSearchRequested() {
+    if (mounted) startSearch();
+  }
+
   Future<void> _search() async {
     final client = Matrix.of(context).client;
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -415,6 +425,7 @@ class ChatListController extends State<ChatList>
     _activeSpaceId = widget.activeSpace;
 
     scrollController.addListener(_onScroll);
+    searchRequests.addListener(_onSearchRequested);
     _waitForFirstSync();
     if (PlatformInfos.isMobile) {
       _callEventSubscription = FlutterCallkitIncoming.onEvent.listen(
@@ -481,6 +492,7 @@ class ChatListController extends State<ChatList>
     _callEventSubscription?.cancel();
     _onRoomTagUpdate?.cancel();
     scrollController.removeListener(_onScroll);
+    searchRequests.removeListener(_onSearchRequested);
     searchController.dispose();
     searchFocusNode.dispose();
     scrollController.dispose();

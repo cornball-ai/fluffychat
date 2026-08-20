@@ -155,7 +155,9 @@ class InputBar extends StatelessWidget {
         }
       }
     }
-    final userMatch = RegExp(r'(?:\s|^)@([-\w]+)$').firstMatch(searchText);
+    // `*` not `+`: a bare @ pops the full member list, Signal-style,
+    // and the list narrows as the name is typed.
+    final userMatch = RegExp(r'(?:\s|^)@([-\w]*)$').firstMatch(searchText);
     if (userMatch != null) {
       final userSearch = userMatch[1]!.toLowerCase();
       for (final user in room.getParticipants()) {
@@ -394,60 +396,86 @@ class InputBar extends StatelessWidget {
       focusNode: focusNode,
       textEditingController: controller,
       optionsBuilder: getSuggestions,
-      fieldViewBuilder: (context, controller, focusNode, _) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(AppSettings.fontSizeFactor.value),
-        ),
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          readOnly: readOnly,
-          onEditingComplete: () {
-            // To not lose focus on iOS:
-            // https://github.com/krille-chan/fluffychat/issues/2784
-          },
-          contextMenuBuilder: (c, e) => MarkdownContextBuilder(
-            editableTextState: e,
-            controller: controller,
-          ),
-          contentInsertionConfiguration: ContentInsertionConfiguration(
-            onContentInserted: (KeyboardInsertedContent content) async {
-              final proceed = await showTrustUserInRoomDialog(context, room);
-              if (!proceed) return;
-              final data = content.data;
-              if (data == null) return;
-
-              final file = MatrixFile(
-                mimeType: content.mimeType,
-                bytes: data,
-                name: content.uri.split('/').last,
-              );
-              room.sendFileEvent(file, shrinkImageMaxDimension: 1600);
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) =>
+          Focus(
+            // Tab accepts the highlighted suggestion while the options
+            // overlay is showing (@jo<tab> completes the mention),
+            // instead of moving focus out of the composer. Shift+tab
+            // keeps its reverse-traversal meaning, and with no
+            // suggestions tab traverses as usual.
+            onKeyEvent: (node, event) {
+              // Any tab, shift or not: HardwareKeyboard's tracked
+              // modifier state can desync from reality on the Linux
+              // embedder, and a shift check that misreads sends the
+              // keypress to focus traversal instead of the suggestion
+              // -- which looks exactly like tab-complete being broken.
+              // While the list is showing, tab means "take it".
+              if (event is! KeyUpEvent &&
+                  event.logicalKey == LogicalKeyboardKey.tab &&
+                  getSuggestions(controller.value).isNotEmpty) {
+                onFieldSubmitted();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
             },
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(AppSettings.fontSizeFactor.value),
+              ),
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                readOnly: readOnly,
+                onEditingComplete: () {
+                  // To not lose focus on iOS:
+                  // https://github.com/krille-chan/fluffychat/issues/2784
+                },
+                contextMenuBuilder: (c, e) => MarkdownContextBuilder(
+                  editableTextState: e,
+                  controller: controller,
+                ),
+                contentInsertionConfiguration: ContentInsertionConfiguration(
+                  onContentInserted: (KeyboardInsertedContent content) async {
+                    final proceed = await showTrustUserInRoomDialog(
+                      context,
+                      room,
+                    );
+                    if (!proceed) return;
+                    final data = content.data;
+                    if (data == null) return;
+
+                    final file = MatrixFile(
+                      mimeType: content.mimeType,
+                      bytes: data,
+                      name: content.uri.split('/').last,
+                    );
+                    room.sendFileEvent(file, shrinkImageMaxDimension: 1600);
+                  },
+                ),
+                minLines: minLines,
+                maxLines: maxLines,
+                keyboardType: keyboardType,
+                textInputAction: textInputAction,
+                autofocus: autofocus!,
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter((maxPDUSize / 3).floor()),
+                ],
+                onSubmitted: (text) {
+                  // fix for library for now
+                  // it sets the types for the callback incorrectly
+                  onSubmitted!(text);
+                },
+                maxLength: AppSettings.textMessageMaxLength.value,
+                decoration: decoration,
+                onChanged: (text) {
+                  // fix for the library for now
+                  // it sets the types for the callback incorrectly
+                  onChanged!(text);
+                },
+                textCapitalization: TextCapitalization.sentences,
+              ),
+            ),
           ),
-          minLines: minLines,
-          maxLines: maxLines,
-          keyboardType: keyboardType,
-          textInputAction: textInputAction,
-          autofocus: autofocus!,
-          inputFormatters: [
-            LengthLimitingTextInputFormatter((maxPDUSize / 3).floor()),
-          ],
-          onSubmitted: (text) {
-            // fix for library for now
-            // it sets the types for the callback incorrectly
-            onSubmitted!(text);
-          },
-          maxLength: AppSettings.textMessageMaxLength.value,
-          decoration: decoration,
-          onChanged: (text) {
-            // fix for the library for now
-            // it sets the types for the callback incorrectly
-            onChanged!(text);
-          },
-          textCapitalization: TextCapitalization.sentences,
-        ),
-      ),
       optionsViewBuilder: (c, onSelected, s) {
         final suggestions = s.toList();
         return Material(
