@@ -684,16 +684,23 @@ class ChatController extends State<ChatPageWithRoom>
     final commandMatch = RegExp(r'^\/(\w+)').firstMatch(sendController.text);
     if (commandMatch != null &&
         !sendingClient.commands.keys.contains(commandMatch[1]!.toLowerCase())) {
-      final l10n = L10n.of(context);
-      final dialogResult = await showOkCancelAlertDialog(
-        context: context,
-        title: l10n.commandInvalid,
-        message: l10n.commandMissing(commandMatch[0]!),
-        okLabel: l10n.sendAsText,
-        cancelLabel: l10n.cancel,
-      );
-      if (dialogResult == OkCancelResult.cancel) return;
-      parseCommands = false;
+      // Commands the client does not know may still be commands for a
+      // bot in the room. With this setting they pass through as plain
+      // text without interrupting; bots parse them on their side.
+      if (AppSettings.sendUnknownCommandsAsText.value) {
+        parseCommands = false;
+      } else {
+        final l10n = L10n.of(context);
+        final dialogResult = await showOkCancelAlertDialog(
+          context: context,
+          title: l10n.commandInvalid,
+          message: l10n.commandMissing(commandMatch[0]!),
+          okLabel: l10n.sendAsText,
+          cancelLabel: l10n.cancel,
+        );
+        if (dialogResult == OkCancelResult.cancel) return;
+        parseCommands = false;
+      }
     }
 
     if (currentlyTyping) {

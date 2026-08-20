@@ -64,6 +64,18 @@ class SettingsChatView extends StatelessWidget {
                 setting: AppSettings.sendOnEnter,
               ),
               SettingsSwitchListTile.adaptive(
+                title: L10n.of(context).sendUnknownCommandsAsText,
+                subtitle: L10n.of(context).sendUnknownCommandsAsTextDescription,
+                setting: AppSettings.sendUnknownCommandsAsText,
+              ),
+              SettingsSwitchListTile.adaptive(
+                title: L10n.of(context).renderMarkdownInPlainMessages,
+                subtitle: L10n.of(
+                  context,
+                ).renderMarkdownInPlainMessagesDescription,
+                setting: AppSettings.renderMarkdownInPlainMessages,
+              ),
+              SettingsSwitchListTile.adaptive(
                 title: L10n.of(context).swipeRightToLeftToReply,
                 setting: AppSettings.swipeRightToLeftToReply,
               ),

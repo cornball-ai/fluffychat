@@ -43,6 +43,14 @@ enum AppSettings<T> {
   sendPublicReadReceipts<bool>('chat.fluffy.send_public_read_receipts', true),
   swipeRightToLeftToReply<bool>('chat.fluffy.swipeRightToLeftToReply', true),
   sendOnEnter<bool>('chat.fluffy.send_on_enter', false),
+  sendUnknownCommandsAsText<bool>(
+    'chat.fluffy.send_unknown_commands_as_text',
+    true,
+  ),
+  renderMarkdownInPlainMessages<bool>(
+    'chat.fluffy.render_markdown_in_plain_messages',
+    true,
+  ),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
   experimentalVoip<bool>('chat.fluffy.experimental_voip', false),
   shareKeysWith<String>('chat.fluffy.share_keys_with_2', 'all'),
