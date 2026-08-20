@@ -404,19 +404,6 @@ class InputBar extends StatelessWidget {
             // keeps its reverse-traversal meaning, and with no
             // suggestions tab traverses as usual.
             onKeyEvent: (node, event) {
-              // DIAGNOSTIC (temporary): trace what the composer's key
-              // handler actually receives on desktop.
-              if (event.logicalKey == LogicalKeyboardKey.tab ||
-                  event.logicalKey == LogicalKeyboardKey.enter) {
-                // ignore: avoid_print
-                print(
-                  '[inputbar] ${event.runtimeType} '
-                  '${event.logicalKey.debugName} '
-                  'sugg=${getSuggestions(controller.value).length} '
-                  'text="${controller.text}" '
-                  'sel=${controller.selection.baseOffset}',
-                );
-              }
               // Any tab, shift or not: HardwareKeyboard's tracked
               // modifier state can desync from reality on the Linux
               // embedder, and a shift check that misreads sends the
@@ -426,8 +413,6 @@ class InputBar extends StatelessWidget {
               if (event is! KeyUpEvent &&
                   event.logicalKey == LogicalKeyboardKey.tab &&
                   getSuggestions(controller.value).isNotEmpty) {
-                // ignore: avoid_print
-                print('[inputbar] accepting suggestion via tab');
                 onFieldSubmitted();
                 return KeyEventResult.handled;
               }
@@ -493,9 +478,6 @@ class InputBar extends StatelessWidget {
           ),
       optionsViewBuilder: (c, onSelected, s) {
         final suggestions = s.toList();
-        // DIAGNOSTIC (temporary): confirm the overlay's live state.
-        // ignore: avoid_print
-        print('[inputbar] overlay building with ${suggestions.length}');
         return Material(
           elevation: theme.appBarTheme.scrolledUnderElevation ?? 4,
           shadowColor: theme.appBarTheme.shadowColor,
