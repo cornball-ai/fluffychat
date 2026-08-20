@@ -33,7 +33,10 @@ bool _vodozemacInitialized = false;
 bool isIntegrationTest = false;
 
 void main(List<String> args) => runZonedGuarded(() async {
-  // DIAGNOSTIC (temporary): prove which build is running, first thing.
+  // Announce which build is running, first thing. Bake the id in with
+  // --dart-define=CORNBALL_BUILD=<commit>; "unstamped" means the build
+  // command didn't. One line that ends every "which binary is this
+  // actually" debugging session before it starts.
   // ignore: avoid_print
   print(
     '[cornball] build '
