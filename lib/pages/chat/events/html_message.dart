@@ -10,6 +10,7 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/code_highlight_theme.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
+import 'package:fluffychat/utils/scroll_anchor.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -647,6 +648,24 @@ class _CollapsibleText extends StatefulWidget {
 class _CollapsibleTextState extends State<_CollapsibleText> {
   bool _expanded = false;
 
+  /// On the Text.rich rather than the AnimatedSize: AnimatedSize's own height
+  /// is still mid-animation on the frame after the toggle, while its child is
+  /// laid out at the final height straight away. Measuring the parent would
+  /// read a height that has not happened yet and under-correct.
+  final GlobalKey _textKey = GlobalKey();
+
+  void _toggle() {
+    final before = heightOf(_textKey);
+    setState(() => _expanded = !_expanded);
+    if (before == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final after = heightOf(_textKey);
+      if (after == null) return;
+      anchorTopEdge(context: context, heightBefore: before, heightAfter: after);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = L10n.of(context);
@@ -660,6 +679,7 @@ class _CollapsibleTextState extends State<_CollapsibleText> {
           alignment: Alignment.topLeft,
           child: Text.rich(
             widget.span,
+            key: _textKey,
             style: widget.style,
             maxLines: _expanded ? null : widget.maxLines,
             overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
@@ -668,7 +688,7 @@ class _CollapsibleTextState extends State<_CollapsibleText> {
         ),
         Center(
           child: TextButton.icon(
-            onPressed: () => setState(() => _expanded = !_expanded),
+            onPressed: _toggle,
             style: TextButton.styleFrom(foregroundColor: widget.linkColor),
             icon: Icon(_expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down),
             label: Text(_expanded ? l10n.showLess : l10n.showMore),
