@@ -22,7 +22,9 @@ class ReplyContent extends StatelessWidget {
     this.timeline,
   });
 
-  static const BorderRadius borderRadius = BorderRadius.only(
+  // A getter, not a static final: the radius follows the active theme
+  // variant, and a lazy static would freeze whichever one was loaded first.
+  static BorderRadius get borderRadius => BorderRadius.only(
     topRight: Radius.circular(AppConfig.borderRadius / 2),
     bottomRight: Radius.circular(AppConfig.borderRadius / 2),
   );
@@ -35,7 +37,7 @@ class ReplyContent extends StatelessWidget {
     final displayEvent = timeline != null
         ? replyEvent.getDisplayEvent(timeline)
         : replyEvent;
-    const fontSize = AppConfig.messageFontSize;
+    final fontSize = AppConfig.messageFontSize;
     final color = theme.brightness == Brightness.dark
         ? theme.colorScheme.onTertiaryContainer
         : ownMessage

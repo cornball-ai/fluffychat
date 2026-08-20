@@ -5,6 +5,7 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/theme_variant.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/file_selector.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -114,6 +115,20 @@ class SettingsStyleController extends State<SettingsStyle> {
 
   ThemeMode get currentTheme => ThemeController.of(context).themeMode;
   Color? get currentColor => ThemeController.of(context).primaryColor;
+  ThemeVariant get currentVariant => ThemeController.of(context).themeVariant;
+
+  void setThemeVariant(ThemeVariant variant) {
+    ThemeController.of(context).setThemeVariant(variant);
+    setState(() {});
+  }
+
+  /// Seeding a scheme is expensive enough to matter here, because dragging
+  /// the font size slider rebuilds this page on every frame.
+  final Map<String, ColorScheme> _previewSchemes = {};
+
+  ColorScheme previewScheme(ThemeVariant variant, Brightness brightness) =>
+      _previewSchemes['${variant.id}.${brightness.name}'] ??= variant
+          .colorScheme(brightness, variant.seed);
 
   void switchTheme(ThemeMode? newTheme) {
     if (newTheme == null) return;

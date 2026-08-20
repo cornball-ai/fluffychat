@@ -5,6 +5,9 @@
 
 import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/theme_variant.dart';
+import 'package:fluffychat/config/theme_variants.dart';
 import 'package:fluffychat/utils/color_value.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +18,7 @@ class ThemeBuilder extends StatefulWidget {
     BuildContext context,
     ThemeMode themeMode,
     Color? primaryColor,
+    ThemeVariant themeVariant,
   )
   builder;
 
@@ -36,10 +40,13 @@ class ThemeController extends State<ThemeBuilder> {
   SharedPreferences? _sharedPreferences;
   ThemeMode? _themeMode;
   Color? _primaryColor;
+  ThemeVariant? _themeVariant;
 
   ThemeMode get themeMode => _themeMode ?? ThemeMode.system;
 
   Color? get primaryColor => _primaryColor;
+
+  ThemeVariant get themeVariant => _themeVariant ?? ThemeVariants.fallback;
 
   static ThemeController of(BuildContext context) =>
       Provider.of<ThemeController>(context, listen: false);
@@ -84,8 +91,28 @@ class ThemeController extends State<ThemeBuilder> {
     });
   }
 
+  /// Adopting a variant adopts its seed colour too. The colour grid in the
+  /// style settings still overrides that afterwards.
+  Future<void> setThemeVariant(ThemeVariant newThemeVariant) async {
+    final preferences = _sharedPreferences ??=
+        await SharedPreferences.getInstance();
+    final seed = newThemeVariant.seed;
+    await AppSettings.themeVariant.setItem(newThemeVariant.id);
+    await AppSettings.colorSchemeSeedInt.setItem(seed.hexValue);
+    await preferences.setInt(widget.primaryColorSettingsKey, seed.hexValue);
+    setState(() {
+      _themeVariant = newThemeVariant;
+      _primaryColor = seed;
+    });
+  }
+
   @override
   void initState() {
+    // Read synchronously rather than in _loadData: a post-frame load paints
+    // one frame of the stock look first, and a typeface swap makes that flash
+    // obvious. The AppSettings getters return the default when the store is
+    // not up yet, so this cannot throw.
+    _themeVariant = ThemeVariants.byId(AppSettings.themeVariant.value);
     WidgetsBinding.instance.addPostFrameCallback(_loadData);
     super.initState();
   }
@@ -95,8 +122,12 @@ class ThemeController extends State<ThemeBuilder> {
     return Provider(
       create: (_) => this,
       child: DynamicColorBuilder(
-        builder: (light, _) =>
-            widget.builder(context, themeMode, primaryColor ?? light?.primary),
+        builder: (light, _) => widget.builder(
+          context,
+          themeMode,
+          primaryColor ?? light?.primary,
+          themeVariant,
+        ),
       ),
     );
   }

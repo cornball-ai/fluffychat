@@ -9,7 +9,10 @@ abstract class AppConfig {
   static const Color primaryColor = Color(0xFF261386);
 
   static const Color chatColor = primaryColor;
-  static const double messageFontSize = 16.0;
+
+  /// Set from the active theme variant on every theme build; see
+  /// `FluffyThemes.buildTheme`.
+  static double messageFontSize = 16.0;
   static const bool allowOtherHomeservers = true;
   static const bool enableRegistration = true;
   static const bool hideTypingUsernames = false;
@@ -19,7 +22,10 @@ abstract class AppConfig {
   static const String schemePrefix = 'matrix:';
   static const String pushNotificationsChannelId = 'fluffychat_push';
   static const String pushNotificationsAppId = 'chat.fluffy.fluffychat';
-  static const double borderRadius = 18.0;
+
+  /// Set from the active theme variant on every theme build; see
+  /// `FluffyThemes.buildTheme`.
+  static double borderRadius = 18.0;
   static const double spaceBorderRadius = 11.0;
   static const double columnWidth = 360.0;
 
