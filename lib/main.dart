@@ -33,6 +33,15 @@ bool _vodozemacInitialized = false;
 bool isIntegrationTest = false;
 
 void main(List<String> args) => runZonedGuarded(() async {
+  // Announce which build is running, first thing. Bake the id in with
+  // --dart-define=CORNBALL_BUILD=<commit>; "unstamped" means the build
+  // command didn't. One line that ends every "which binary is this
+  // actually" debugging session before it starts.
+  // ignore: avoid_print
+  print(
+    '[cornball] build '
+    '${const String.fromEnvironment('CORNBALL_BUILD', defaultValue: 'unstamped')}',
+  );
   // Forward Flutter errors to global error reporter
   FlutterError.onError = kDebugMode
       ? FlutterError.dumpErrorToConsole

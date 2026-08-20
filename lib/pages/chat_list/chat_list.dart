@@ -194,6 +194,16 @@ class ChatListController extends State<ChatList>
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
 
+  /// Bumped by the global ctrl+F shortcut, which sits above the router and
+  /// so has no other way to reach this State. Only a mounted controller
+  /// answers, which is the behaviour we want: on a narrow layout with a chat
+  /// open the list is not built at all, so there is no field to focus.
+  static final ValueNotifier<int> searchRequests = ValueNotifier(0);
+
+  void _onSearchRequested() {
+    if (mounted) startSearch();
+  }
+
   Future<void> _search() async {
     final client = Matrix.of(context).client;
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -374,12 +384,28 @@ class ChatListController extends State<ChatList>
 
   StreamSubscription? _onRoomTagUpdate;
 
+  /// Once per app start: land in the home room, the rolling
+  /// conversation the app is "for". A deep link or notification that
+  /// already opened a chat wins over it.
+  static bool _homeRoomOpenedOnce = false;
+
+  void _maybeOpenHomeRoom() {
+    if (_homeRoomOpenedOnce) return;
+    _homeRoomOpenedOnce = true;
+    final id = AppSettings.homeRoomId.value;
+    if (id.isEmpty) return;
+    if (widget.activeChat != null) return;
+    if (Matrix.of(context).client.getRoomById(id) == null) return;
+    context.go('/rooms/$id');
+  }
+
   @override
   void initState() {
     _initReceiveSharingIntent();
     _activeSpaceId = widget.activeSpace;
 
     scrollController.addListener(_onScroll);
+    searchRequests.addListener(_onSearchRequested);
     _waitForFirstSync();
     Matrix.of(context).voipPlugin?.context = context;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -389,6 +415,7 @@ class ChatListController extends State<ChatList>
         ).store.getString(_serverStoreNamespace);
         Matrix.of(context).backgroundPush?.setupPush(context);
         UpdateNotifier.showUpdateDialog(context);
+        _maybeOpenHomeRoom();
       }
 
       // Workaround for system UI overlay style not applied on app start
@@ -434,6 +461,7 @@ class ChatListController extends State<ChatList>
     _intentFileStreamSubscription?.cancel();
     _onRoomTagUpdate?.cancel();
     scrollController.removeListener(_onScroll);
+    searchRequests.removeListener(_onSearchRequested);
     searchController.dispose();
     searchFocusNode.dispose();
     scrollController.dispose();
