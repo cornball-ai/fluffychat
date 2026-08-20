@@ -404,9 +404,14 @@ class InputBar extends StatelessWidget {
             // keeps its reverse-traversal meaning, and with no
             // suggestions tab traverses as usual.
             onKeyEvent: (node, event) {
-              if (event is KeyDownEvent &&
+              // Any tab, shift or not: HardwareKeyboard's tracked
+              // modifier state can desync from reality on the Linux
+              // embedder, and a shift check that misreads sends the
+              // keypress to focus traversal instead of the suggestion
+              // -- which looks exactly like tab-complete being broken.
+              // While the list is showing, tab means "take it".
+              if (event is! KeyUpEvent &&
                   event.logicalKey == LogicalKeyboardKey.tab &&
-                  !HardwareKeyboard.instance.isShiftPressed &&
                   getSuggestions(controller.value).isNotEmpty) {
                 onFieldSubmitted();
                 return KeyEventResult.handled;

@@ -45,9 +45,8 @@ void main() {
                     (context, controller, focusNode, onFieldSubmitted) =>
                         Focus(
                           onKeyEvent: (node, event) {
-                            if (event is KeyDownEvent &&
+                            if (event is! KeyUpEvent &&
                                 event.logicalKey == LogicalKeyboardKey.tab &&
-                                !HardwareKeyboard.instance.isShiftPressed &&
                                 getSuggestions(controller.value).isNotEmpty) {
                               onFieldSubmitted();
                               return KeyEventResult.handled;
@@ -82,6 +81,18 @@ void main() {
     // Tab completed the highlighted (first) option and kept focus in
     // the field instead of traversing to the button.
     expect(controller.text, '@alice ');
+    expect(focusNode.hasFocus, isTrue);
+
+    // Shift+tab with suggestions showing also accepts: modifier state
+    // is deliberately ignored because the tracked shift state can
+    // desync from reality on desktop embedders.
+    await tester.enterText(find.byType(TextField), '@bo');
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(controller.text, '@bob ');
     expect(focusNode.hasFocus, isTrue);
 
     // With no suggestions, tab traverses as usual.
