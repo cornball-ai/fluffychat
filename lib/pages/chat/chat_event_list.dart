@@ -229,6 +229,7 @@ class ChatEventList extends StatelessWidget {
                       enterThread: controller.activeThreadId == null
                           ? controller.enterThread
                           : null,
+                      onShowActions: controller.showMessageActions,
                       onExpand: canExpand
                           ? () => controller.expandEventsFrom(
                               event,
