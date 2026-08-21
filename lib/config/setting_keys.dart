@@ -16,7 +16,13 @@ enum AppSettings<T> {
   textMessageMaxLength<int>('textMessageMaxLength', 16384),
 
   /// Max lines for unselected HTML/text bubbles; 0 = unlimited (no fade).
-  messagePreviewMaxLines<int>('chat.fluffy.message_preview_max_lines', 50),
+  ///
+  /// Has to fit on a screen to be a preview. At 50 the collapsed form was
+  /// taller than any phone viewport, so a long message opened showing its
+  /// last lines with the "show more" button under them -- you never saw the
+  /// beginning, and expanding revealed text below the fold rather than in
+  /// front of you.
+  messagePreviewMaxLines<int>('chat.fluffy.message_preview_max_lines', 8),
   audioRecordingNumChannels<int>('audioRecordingNumChannels', 1),
   audioRecordingAutoGain<bool>('audioRecordingAutoGain', true),
   audioRecordingEchoCancel<bool>('audioRecordingEchoCancel', false),

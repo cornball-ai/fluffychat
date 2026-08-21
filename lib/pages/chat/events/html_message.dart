@@ -6,7 +6,6 @@
 import 'package:collection/collection.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/setting_keys.dart';
-import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/code_highlight_theme.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
@@ -648,10 +647,7 @@ class _CollapsibleText extends StatefulWidget {
 class _CollapsibleTextState extends State<_CollapsibleText> {
   bool _expanded = false;
 
-  /// On the Text.rich rather than the AnimatedSize: AnimatedSize's own height
-  /// is still mid-animation on the frame after the toggle, while its child is
-  /// laid out at the final height straight away. Measuring the parent would
-  /// read a height that has not happened yet and under-correct.
+  /// Measures the text itself, which is what occupies space in the timeline.
   final GlobalKey _textKey = GlobalKey();
 
   void _toggle() {
@@ -673,18 +669,19 @@ class _CollapsibleTextState extends State<_CollapsibleText> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedSize(
-          duration: FluffyThemes.animationDuration,
-          curve: FluffyThemes.animationCurve,
-          alignment: Alignment.topLeft,
-          child: Text.rich(
-            widget.span,
-            key: _textKey,
-            style: widget.style,
-            maxLines: _expanded ? null : widget.maxLines,
-            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            selectionColor: widget.textColor.withAlpha(128),
-          ),
+        // Deliberately not wrapped in an AnimatedSize. The scroll correction
+        // that keeps your place is measured after layout and applied on the
+        // next frame, which is imperceptible for a height that changes in one
+        // step. An easing height repeats that lag on every frame of the
+        // animation, and the correction visibly chases the text instead of
+        // holding it still.
+        Text.rich(
+          widget.span,
+          key: _textKey,
+          style: widget.style,
+          maxLines: _expanded ? null : widget.maxLines,
+          overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          selectionColor: widget.textColor.withAlpha(128),
         ),
         Center(
           child: TextButton.icon(
