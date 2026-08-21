@@ -4,12 +4,24 @@
 
 /// Tracks how much of a spoken reply the user actually heard.
 ///
-/// Text-to-speech arrives as indexed chunks, and chunk *i* corresponds to text
-/// piece *i* of the reply. When the user talks over the bot, playback is cut
-/// and whatever is still queued is dropped -- so the room history would
-/// otherwise record the bot as having said sentences that never left the
-/// speaker. Reporting the last index actually heard is what lets the server
-/// truncate the stored message to match.
+/// When the user talks over the reply, playback is cut and whatever is still
+/// queued is dropped -- so the room history would otherwise record the
+/// assistant as having said sentences that never left the speaker. Reporting
+/// the last index actually heard is what lets the stored message be truncated
+/// to match.
+///
+/// What this reports is a **chunk** index. Turning that into "which sentences
+/// were said" relies on chunk *i* mapping to text piece *i*, and that is an
+/// assumption held where the split is made, not a fact observable from here.
+/// If chunks are ever merged for prosody, or one carries only punctuation or
+/// silence, the mapping shifts and the index points at the wrong piece with
+/// nothing raised. The 1:1 invariant has to be asserted at synthesis time,
+/// where it is cheap and can fail loudly.
+///
+/// Also distinct from wherever generation was cancelled. Text that was
+/// generated is a superset of text that was spoken, so the two truncation
+/// points do not coincide -- this one cuts further back. Treating them as the
+/// same attributes unspoken text to the assistant.
 ///
 /// This holds no timers and reads no clock: the caller feeds elapsed time from
 /// the audio player. That keeps the rounding rule -- the part that is easy to
