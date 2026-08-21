@@ -87,6 +87,8 @@ class BargeInDetector {
   });
 
   Duration _aboveFor = Duration.zero;
+  Duration _triggeredAfter = Duration.zero;
+  double _triggerLevel = silenceDbfs;
   double _lastLevel = silenceDbfs;
 
   /// Level of the most recent frame, for meters and for diagnosing a threshold
@@ -94,7 +96,29 @@ class BargeInDetector {
   double get lastLevel => _lastLevel;
 
   /// How long the level has been continuously above the threshold.
+  ///
+  /// This is the *running* count, so it is zero immediately after a fire. Use
+  /// [triggeredAfter] to report what actually caused a cut.
   Duration get aboveFor => _aboveFor;
+
+  /// The run length and level that caused the most recent fire, kept because
+  /// the running count is cleared by the fire itself.
+  ///
+  /// These exist for one specific failure. If platform echo cancellation leaks
+  /// at high speaker volume, the detector hears our own synthesised speech and
+  /// cuts playback with no user input at all -- so the assistant interrupts
+  /// itself, repeatedly, mid-sentence. That looks like a fault in whatever is
+  /// generating the replies rather than in capture, and someone will debug the
+  /// wrong process for a while unless the cut says what triggered it.
+  ///
+  /// A cut logged with its level and run length is what separates the two: a
+  /// user talking over the reply looks different from our own output leaking
+  /// back, and both look different from a threshold set too low.
+  Duration get triggeredAfter => _triggeredAfter;
+
+  /// Level of the frame that completed the most recent fire. See
+  /// [triggeredAfter].
+  double get triggerLevel => _triggerLevel;
 
   /// Feeds one frame. Returns true on the frame where the sustain window is
   /// satisfied, and only that frame -- the count restarts afterwards, so a
@@ -109,12 +133,18 @@ class BargeInDetector {
     _aboveFor += frameDuration(frame, sampleRate: sampleRate);
     if (_aboveFor < sustain) return false;
 
+    _triggeredAfter = _aboveFor;
+    _triggerLevel = level;
     _aboveFor = Duration.zero;
     return true;
   }
 
   /// Clears the run. Call when playback stops, so silence during the gap does
   /// not have to be re-accumulated against a stale count.
+  ///
+  /// Leaves [triggeredAfter] and [triggerLevel] alone: they describe a cut that
+  /// already happened, and a caller logging them after stopping playback should
+  /// still see what caused it.
   void reset() {
     _aboveFor = Duration.zero;
     _lastLevel = silenceDbfs;

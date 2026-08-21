@@ -170,6 +170,60 @@ void main() {
       d.addFrame(loud);
       expect(d.lastLevel, closeTo(-6.02, 0.01));
     });
+
+    group('what caused the cut', () {
+      // If echo cancellation leaks, the detector fires on the assistant's own
+      // voice and it interrupts itself mid-sentence with nobody talking. That
+      // reads as a fault in whatever generates the replies, not in capture, so
+      // a cut has to be able to say what set it off.
+
+      test('the running count is cleared by the fire, the record is not', () {
+        // The distinction this whole pair exists for: the obvious field to
+        // log at the moment of a cut reads zero, because firing resets it.
+        final d = detector();
+        for (var i = 0; i < 19; i++) {
+          d.addFrame(loud);
+        }
+        expect(d.addFrame(loud), isTrue);
+
+        expect(d.aboveFor, Duration.zero);
+        expect(
+          d.triggeredAfter,
+          const Duration(milliseconds: 200),
+          reason: 'a cut cannot report the run that caused it',
+        );
+      });
+
+      test('records the level that completed the fire', () {
+        final d = detector();
+        for (var i = 0; i < 20; i++) {
+          d.addFrame(loud);
+        }
+        expect(d.triggerLevel, closeTo(-6.02, 0.01));
+      });
+
+      test('is zero before anything has fired', () {
+        final d = detector();
+        for (var i = 0; i < 5; i++) {
+          d.addFrame(loud);
+        }
+        expect(d.triggeredAfter, Duration.zero);
+        expect(d.triggerLevel, silenceDbfs);
+      });
+
+      test('survives reset, which clears only the running count', () {
+        // Playback stopping must not erase the evidence of why it stopped.
+        final d = detector();
+        for (var i = 0; i < 20; i++) {
+          d.addFrame(loud);
+        }
+        d.reset();
+
+        expect(d.aboveFor, Duration.zero);
+        expect(d.triggeredAfter, const Duration(milliseconds: 200));
+        expect(d.triggerLevel, closeTo(-6.02, 0.01));
+      });
+    });
   });
 }
 
