@@ -115,17 +115,22 @@ void main() {
       expect(d.addFrame(loud), isTrue);
     });
 
-    test('a brief spike does not fire it', () {
+    test('two bursts either side of a gap do not add up to a fire', () {
       // The whole point of the sustain window: a door slam or a keyboard is
       // loud but short, and cutting the bot off for one is worse than not
       // cutting it off at all.
+      //
+      // Both bursts are deliberately 150 ms -- under the 200 ms window on
+      // their own, over it if the gap fails to clear the count. A shorter
+      // burst would pass whether or not the count resets, which makes it a
+      // test that cannot fail for the reason it was written.
       final d = detector();
-      for (var i = 0; i < 5; i++) {
-        expect(d.addFrame(loud), isFalse);
+      for (var i = 0; i < 15; i++) {
+        expect(d.addFrame(loud), isFalse, reason: 'fired inside burst one');
       }
       expect(d.addFrame(quiet), isFalse);
-      for (var i = 0; i < 5; i++) {
-        expect(d.addFrame(loud), isFalse);
+      for (var i = 0; i < 15; i++) {
+        expect(d.addFrame(loud), isFalse, reason: 'the gap did not clear');
       }
     });
 
