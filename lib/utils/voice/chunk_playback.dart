@@ -27,9 +27,23 @@
 /// the audio player. That keeps the rounding rule -- the part that is easy to
 /// get wrong and impossible to see once it is wrong -- testable on its own.
 class ChunkPlayback {
-  /// Total chunks the server said it would send, from `on_chunk(_, _, total)`.
-  /// Only used to report how many were dropped.
+  /// Total chunks the server said it would send. Only used to report how many
+  /// were dropped.
   int? totalAnnounced;
+
+  /// Chunk indices are **zero-based**: the first chunk is index 0.
+  ///
+  /// Stated because it is not free. [droppedCount] turns an inclusive index
+  /// into a count by adding one, which is the zero-based conversion and is
+  /// wrong by exactly one under any other base. The synthesis side is written
+  /// in a one-based language and its emit loop hands out 1 for the first
+  /// chunk, so a conversion has to happen somewhere on the way here.
+  ///
+  /// If it does not, nothing fails: the count is off by one, the assistant is
+  /// credited with one sentence it never spoke, and the transcript stays
+  /// well-formed. Whichever side converts, this is the assumption it has to
+  /// meet, and the tests pin it.
+  static const int firstChunkIndex = 0;
 
   int? _lastCompleted;
   int? _currentIndex;

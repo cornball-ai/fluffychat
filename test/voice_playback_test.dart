@@ -104,6 +104,26 @@ void main() {
   });
 
   group('droppedCount', () {
+    test('the index base is zero, and the count depends on it', () {
+      // droppedCount turns an inclusive index into a count by adding one.
+      // That is the zero-based conversion and it is wrong by exactly one under
+      // any other base -- and the synthesis side is written in a one-based
+      // language whose emit loop hands out 1 for the first chunk. If nothing
+      // converts on the way here, the count is quietly off by one and the
+      // assistant is credited with a sentence it never spoke.
+      //
+      // Hearing only the FIRST chunk of nine is the case that separates the
+      // two bases: zero-based says 1 played and 8 dropped, one-based would
+      // say 2 played and 7.
+      final p = ChunkPlayback()..totalAnnounced = 9;
+      p.startChunk(ChunkPlayback.firstChunkIndex, const Duration(seconds: 1));
+      p.completeChunk();
+
+      expect(ChunkPlayback.firstChunkIndex, 0);
+      expect(p.heardThrough, 0);
+      expect(p.droppedCount, 8);
+    });
+
     test('nine sent, four heard, five dropped', () {
       final p = ChunkPlayback()..totalAnnounced = 9;
       for (var i = 0; i < 4; i++) {
