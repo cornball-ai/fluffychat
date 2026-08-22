@@ -522,14 +522,24 @@ class ChatController extends State<ChatPageWithRoom>
             .indexWhere((e) => e.eventId == readMarkerEventId);
       }
 
-      // Once per visit, not once per timeline load. This returns before the
-      // setReadMarker() below, which is right for taking someone back to
-      // where they left off -- but the timeline reloads for all sorts of
-      // reasons (a decryption retry, a resync), and every reload used to
-      // scroll back up and skip marking the room read. The room could then
-      // never be read: scroll to the bottom, get yanked up by the next
-      // reload, repeat.
-      if (readMarkerEventIndex > 1 && !_didScrollToReadMarker) {
+      // Only drag someone backwards for messages that actually notified them.
+      //
+      // This returns before the setReadMarker() below, which is right when
+      // there is genuinely unread content to go back to. But `hasNewMessages`
+      // alone is true whenever the newest event carries no receipt from us,
+      // and an m.notice never notifies -- so a room whose traffic is all bot
+      // output looked unread, got scrolled back to an old marker, and returned
+      // before marking anything read. The marker then never advanced, so the
+      // next visit did it again. Permanently unread, and scrolling to the
+      // bottom by hand was the only escape.
+      //
+      // room.isUnread is notificationCount > 0 || markedUnread: the room is
+      // flagged unread rather than merely lacking a receipt.
+      //
+      // The once-per-visit guard stays for the other half of it: the timeline
+      // reloads for all sorts of reasons (a decryption retry, a resync), and
+      // every reload used to scroll up again.
+      if (readMarkerEventIndex > 1 && room.isUnread && !_didScrollToReadMarker) {
         _didScrollToReadMarker = true;
         Logs().v('Scroll up to visible event', readMarkerEventId);
         scrollToEventId(readMarkerEventId, highlightEvent: false);
