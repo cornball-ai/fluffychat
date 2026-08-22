@@ -27,6 +27,14 @@ double? heightOf(GlobalKey key) {
 /// Only corrects in a reversed scroll view. In a normal one, growth pushes
 /// content downward and the top edge is already fixed, so correcting there
 /// would introduce the very jump this exists to prevent.
+///
+/// Call this from a post-frame callback, so it runs against the layout that
+/// actually happened. That means the correction takes effect one frame after
+/// the growth, which is imperceptible for a height that changes in a single
+/// step -- and is why the collapsible message expands without an animation.
+/// Against an easing height the same lag repeats on every frame, so the
+/// correction chases the text for the length of the animation instead of
+/// holding it still.
 void anchorTopEdge({
   required BuildContext context,
   required double heightBefore,
