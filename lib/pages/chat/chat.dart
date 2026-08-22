@@ -657,7 +657,7 @@ class ChatController extends State<ChatPageWithRoom>
           : 'no clients';
       return _skipReadMarker(
         'scrolled up (pixels $pixels, tolerance $_atBottomTolerance, '
-        'allowNewEvent ${timeline?.allowNewEvent})',
+        'allowNewEvent ${this.timeline?.allowNewEvent})',
       );
     }
 
