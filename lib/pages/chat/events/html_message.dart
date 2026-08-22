@@ -373,9 +373,12 @@ class HtmlMessage extends StatelessWidget {
               padding: isInline
                   ? const EdgeInsets.symmetric(horizontal: 4.0)
                   : const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: Text.rich(
-                TextSpan(children: [_renderCodeBlockNode(element)]),
-                selectionColor: hightlightTextColor.withAlpha(128),
+              child: _codeBody(
+                isInline: isInline,
+                child: Text.rich(
+                  TextSpan(children: [_renderCodeBlockNode(element)]),
+                  selectionColor: hightlightTextColor.withAlpha(128),
+                ),
               ),
             ),
           ),
@@ -626,6 +629,23 @@ class HtmlMessage extends StatelessWidget {
       child: text,
     );
   }
+}
+
+/// A block of code scrolls sideways; inline code does not.
+///
+/// Code is not prose. Wrapping a long line pushes its remainder onto the next
+/// row, which shifts every line below it out of alignment and turns a comment
+/// or a string into something that reads as structure. Giving the block
+/// unbounded width instead lets long lines run off the edge, where they can be
+/// scrolled to, and leaves the indentation meaning what it says.
+///
+/// Inline code sits inside a sentence and has to wrap with it.
+Widget _codeBody({required bool isInline, required Widget child}) {
+  if (isInline) return child;
+  return SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: child,
+  );
 }
 
 /// Height of a single line in [style], so a line-count setting can become the

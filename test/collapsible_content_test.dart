@@ -222,6 +222,51 @@ void main() {
     });
   });
 
+  group('the cut edge fades', () {
+    // A hard clip reads as a rendering fault rather than as "there is more".
+    // The fade costs a saveLayer, so it is applied only while something is
+    // actually hidden.
+
+    testWidgets('faded while content is cut off', (tester) async {
+      await tester.pumpWidget(host(collapsible(child: widgetHeavy())));
+      await tester.pumpAndSettle();
+      expect(find.byType(ShaderMask), findsOneWidget);
+    });
+
+    testWidgets('no fade, and no layer, once fully expanded', (tester) async {
+      await tester.pumpWidget(host(collapsible(child: widgetHeavy())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('more'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ShaderMask), findsNothing);
+    });
+
+    testWidgets('no fade on content that fits', (tester) async {
+      await tester.pumpWidget(
+        host(collapsible(child: widgetHeavy(height: 20))),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ShaderMask), findsNothing);
+    });
+
+    testWidgets('can be turned off', (tester) async {
+      await tester.pumpWidget(
+        host(
+          CollapsibleContent(
+            collapsedHeight: cap,
+            fadeHeight: 0,
+            controlBuilder: control,
+            child: widgetHeavy(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ShaderMask), findsNothing);
+      expect(tester.getSize(find.byType(ClampedHeight)).height, cap);
+    });
+  });
+
   testWidgets('what is hidden is not tappable', (tester) async {
     // A link under the fold must not take a tap aimed at the visible message.
     var tapped = false;

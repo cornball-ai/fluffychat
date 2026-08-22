@@ -38,6 +38,14 @@ class CollapsibleContent extends StatefulWidget {
   final Duration duration;
   final Curve curve;
 
+  /// Depth of the fade at the cut edge. Zero disables it.
+  ///
+  /// Fading to transparent rather than to a background colour is what makes
+  /// this work anywhere: whatever the bubble is painted with shows through, so
+  /// the widget does not need to be told its own background, and cannot get it
+  /// wrong when the theme changes.
+  final double fadeHeight;
+
   /// Builds the expand/collapse control. Only called when the content actually
   /// overflows, which is measured rather than guessed.
   final Widget Function(BuildContext context, bool expanded, VoidCallback toggle)
@@ -49,6 +57,7 @@ class CollapsibleContent extends StatefulWidget {
     required this.controlBuilder,
     this.duration = const Duration(milliseconds: 250),
     this.curve = Curves.easeOutCubic,
+    this.fadeHeight = 28.0,
     super.key,
   });
 
@@ -138,17 +147,44 @@ class _CollapsibleContentState extends State<CollapsibleContent>
     setState(() => _natural = height);
   }
 
+  /// Whether anything is actually being cut off right now. False once fully
+  /// expanded, and false for content that fits, so neither pays for the fade.
+  bool get _clipped => _overflows && _cap.isFinite;
+
   @override
   Widget build(BuildContext context) {
+    Widget content = ClampedHeight(
+      maxHeight: _cap,
+      onNaturalHeight: _onNaturalHeight,
+      child: widget.child,
+    );
+
+    if (_clipped && widget.fadeHeight > 0) {
+      // The gradient is built from the bounds handed in at paint time rather
+      // than from the cap, so it stays correct through the animation without
+      // tracking the height separately.
+      content = ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) {
+          final fade = bounds.height <= 0
+              ? 1.0
+              : (widget.fadeHeight / bounds.height).clamp(0.0, 1.0);
+          return LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [Colors.white, Colors.white, Colors.transparent],
+            stops: [0.0, 1.0 - fade, 1.0],
+          ).createShader(bounds);
+        },
+        child: content,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ClampedHeight(
-          maxHeight: _cap,
-          onNaturalHeight: _onNaturalHeight,
-          child: widget.child,
-        ),
+        content,
         if (_overflows) widget.controlBuilder(context, _expanded, _toggle),
       ],
     );
