@@ -30,6 +30,7 @@ import 'package:fluffychat/utils/matrix_sdk_extensions/filtered_timeline_extensi
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/read_marker_target.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
@@ -615,18 +616,20 @@ class ChatController extends State<ChatPageWithRoom>
     if (timeline == null || timeline.events.isEmpty) return;
 
     final setOnLatestEvent = eventId == null;
-    eventId ??= timeline.events
-        .firstWhereOrNull(
-          (event) => room.pushRuleState == PushRuleState.notify
-              ? room.client.pushruleEvaluator.match(event).notify
-              : {
-                      EventTypes.Message,
-                      EventTypes.Encrypted,
-                      EventTypes.Sticker,
-                    }.contains(event.type) &&
-                    event.eventId.isValidMatrixIdStrict(),
-        )
-        ?.eventId;
+    eventId ??= pickReadMarkerEvent<Event>(
+      events: timeline.events,
+      notifies: (event) =>
+          room.pushRuleState == PushRuleState.notify &&
+          room.client.pushruleEvaluator.match(event).notify,
+      isDisplayable: (event) =>
+          {
+            EventTypes.Message,
+            EventTypes.Encrypted,
+            EventTypes.Sticker,
+          }.contains(event.type) &&
+          event.eventId.isValidMatrixIdStrict(),
+      idOf: (event) => event.eventId,
+    );
 
     // There is no event we could place a read marker
     if (eventId == null) return;
