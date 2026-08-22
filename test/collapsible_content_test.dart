@@ -71,8 +71,14 @@ void main() {
       // The natural height is only known after a layout, so a cap that starts
       // at "unlimited" would flash the whole message before snapping shut --
       // once per long message, while scrolling.
+      //
+      // Asserted with no pump after pumpWidget, which is the whole point.
+      // pumpWidget already runs a complete frame including the post-frame
+      // callback that reports the natural height, so any further pump rebuilds
+      // with the height known and reads the *second* frame -- where a cap that
+      // started unlimited has already corrected itself. This assertion is the
+      // only one that sees the first frame at all.
       await tester.pumpWidget(host(collapsible(child: widgetHeavy())));
-      await tester.pump();
 
       expect(tester.getSize(find.byType(ClampedHeight)).height, cap);
     });
