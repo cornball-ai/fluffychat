@@ -30,6 +30,7 @@ import 'package:fluffychat/utils/matrix_sdk_extensions/filtered_timeline_extensi
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/read_marker_target.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -186,6 +187,23 @@ class ChatController extends State<ChatPageWithRoom>
 
   bool _scrolledUp = false;
 
+  /// Whether this visit has already taken the user back to their last read
+  /// position. See the use site in [_getTimeline].
+  bool _didScrollToReadMarker = false;
+
+  /// How close to the live end counts as being at the bottom.
+  ///
+  /// An exact `pixels == 0` test leaves the room permanently unread whenever
+  /// the offset settles a fraction above zero, because that is the only thing
+  /// that clears [_scrolledUp], and [setReadMarker] refuses to run while it is
+  /// set. Expanding a long message makes that likelier rather than rarer: it
+  /// deliberately moves the offset to hold the message's top edge still.
+  static const double _atBottomTolerance = 8.0;
+
+  bool get _isAtBottom =>
+      scrollController.hasClients &&
+      scrollController.position.pixels <= _atBottomTolerance;
+
   /// Armed when this is the home room and its last activity is older
   /// than the fresh-conversation threshold: the first send prepends
   /// /clear so the bot starts a fresh session. Scrolling up disarms it,
@@ -299,14 +317,14 @@ class ChatController extends State<ChatPageWithRoom>
     }
     if (!scrollController.hasClients) return;
     if (timeline?.allowNewEvent == false ||
-        scrollController.position.pixels > 0 && _scrolledUp == false) {
+        !_isAtBottom && _scrolledUp == false) {
       setState(() {
         _scrolledUp = true;
         // Reading back is a deliberate continuation; the next send
         // must not clear the conversation.
         freshConversationArmed = false;
       });
-    } else if (scrollController.position.pixels <= 0 && _scrolledUp == true) {
+    } else if (_isAtBottom && _scrolledUp == true) {
       setState(() => _scrolledUp = false);
       setReadMarker();
     }
@@ -527,7 +545,25 @@ class ChatController extends State<ChatPageWithRoom>
             .indexWhere((e) => e.eventId == readMarkerEventId);
       }
 
-      if (readMarkerEventIndex > 1) {
+      // Only drag someone backwards for messages that actually notified them.
+      //
+      // This returns before the setReadMarker() below, which is right when
+      // there is genuinely unread content to go back to. But `hasNewMessages`
+      // alone is true whenever the newest event carries no receipt from us,
+      // and an m.notice never notifies -- so a room whose traffic is all bot
+      // output looked unread, got scrolled back to an old marker, and returned
+      // before marking anything read. The marker then never advanced, so the
+      // next visit did it again. Permanently unread, and scrolling to the
+      // bottom by hand was the only escape.
+      //
+      // room.isUnread is notificationCount > 0 || markedUnread: the room is
+      // flagged unread rather than merely lacking a receipt.
+      //
+      // The once-per-visit guard stays for the other half of it: the timeline
+      // reloads for all sorts of reasons (a decryption retry, a resync), and
+      // every reload used to scroll up again.
+      if (readMarkerEventIndex > 1 && room.isUnread && !_didScrollToReadMarker) {
+        _didScrollToReadMarker = true;
         Logs().v('Scroll up to visible event', readMarkerEventId);
         scrollToEventId(readMarkerEventId, highlightEvent: false);
       } else if (readMarkerEventId.isNotEmpty && readMarkerEventIndex == -1) {
@@ -617,45 +653,67 @@ class ChatController extends State<ChatPageWithRoom>
 
   String? _setReadMarkerEventId;
 
+  /// Every refusal below is silent, which is why a room that will not clear
+  /// has to be diagnosed by reading the source and guessing which guard bit.
+  /// Naming the guard turns that into one line of log.
+  void _skipReadMarker(String reason) =>
+      Logs().v('Read marker skipped: $reason (${room.id})');
+
   void setReadMarker({String? eventId}) {
     // Do not send read markers when app is not in foreground
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
-      return;
+      return _skipReadMarker(
+        'app is ${WidgetsBinding.instance.lifecycleState}, not resumed',
+      );
     }
 
     final setOnLatestEvent = eventId == null;
 
     // We only set read marker if we are at the bottom
-    if (_scrolledUp && setOnLatestEvent) return;
+    if (_scrolledUp && setOnLatestEvent) {
+      final pixels = scrollController.hasClients
+          ? scrollController.position.pixels.toStringAsFixed(1)
+          : 'no clients';
+      return _skipReadMarker(
+        'scrolled up (pixels $pixels, tolerance $_atBottomTolerance, '
+        'allowNewEvent ${this.timeline?.allowNewEvent})',
+      );
+    }
 
     // We do not set read marker if we offer user the scroll up banner
-    if (scrollUpBannerEventId != null) return;
+    if (scrollUpBannerEventId != null) {
+      return _skipReadMarker('scroll-up banner showing');
+    }
 
     // We do not set read marker if timeline is empty
     final timeline = this.timeline;
-    if (timeline == null || timeline.events.isEmpty) return;
+    if (timeline == null || timeline.events.isEmpty) {
+      return _skipReadMarker(
+        timeline == null ? 'no timeline' : 'timeline is empty',
+      );
+    }
 
     // Do not set read marker on rtc notification while call is active. This
     // mutes callkit.
     if (room.hasActiveMatrixRtcCall &&
         timeline.events.first.type == RtcNotificationContent.eventType) {
-      return;
+      return _skipReadMarker('rtc call active');
     }
 
-    eventId ??= timeline.events.firstWhereOrNull((event) {
-      if (event.eventId == room.lastEvent?.eventId) return true;
-      if (room.client.pushruleEvaluator.match(event).notify) {
-        return true;
-      }
-      final original = event.originalSource;
-      if (original != null &&
-          room.client.pushruleEvaluator
-              .match(Event.fromMatrixEvent(original, room))
-              .notify) {
-        return true;
-      }
-      return false;
-    })?.eventId;
+    eventId ??= pickReadMarkerEvent<Event>(
+      events: timeline.events,
+      notifies: (event) =>
+          room.pushRuleState == PushRuleState.notify &&
+          room.client.pushruleEvaluator.match(event).notify,
+      isDisplayable: (event) =>
+          {
+            EventTypes.Message,
+            EventTypes.Encrypted,
+            EventTypes.Sticker,
+          }.contains(event.type) &&
+          event.eventId.isValidMatrixIdStrict(),
+      idOf: (event) => event.eventId,
+    );
 
     if (setOnLatestEvent && (room.hasNewMessages || room.isUnread)) {
       eventId ??=
@@ -663,23 +721,44 @@ class ChatController extends State<ChatPageWithRoom>
     }
 
     // There is no event we could place a read marker
-    if (eventId == null) return;
+    if (eventId == null) {
+      return _skipReadMarker('no event to place it on');
+    }
 
     // This is a sending event, we do not set a readmarker yet
-    if (eventId.isValidMatrixIdStrict() == false) return;
+    if (eventId.isValidMatrixIdStrict() == false) {
+      return _skipReadMarker('event $eventId is still sending');
+    }
 
     // We are already setting a read marker on this event
-    if (_setReadMarkerEventId == eventId) return;
+    if (_setReadMarkerEventId == eventId) {
+      return _skipReadMarker('already in flight for $eventId');
+    }
 
-    // Already set a read marker on this event
-    if (room.fullyRead == eventId && !setOnLatestEvent) return;
+    // Already set a read marker on this event -- but only skip if the receipt
+    // landed too.
+    //
+    // `fullyRead` is m.fully_read. The unread badge is drawn from
+    // hasNewMessages, which is about m.read receipts on the newest event.
+    // Those are two different pieces of state and they go out of step: the
+    // marker advances while the receipt does not. Skipping on the marker alone
+    // then means the receipt is never sent, and the room shows as unread
+    // permanently with nothing able to clear it.
+    //
+    // This is the guard that made the room unclearable. Every other fix in
+    // this file is upstream of it, so none of them could reach the send --
+    // while "mark as read" from the room menu worked, because that calls the
+    // SDK directly and never passes through here.
+    if (room.fullyRead == eventId && !room.hasNewMessages) {
+      return _skipReadMarker('already read through $eventId');
+    }
 
     // Set a readmarker on a specific event, not latest, but room is not unread
     // at all.
     if (setOnLatestEvent &&
         !room.hasNewMessages &&
         room.notificationCount == 0) {
-      return;
+      return _skipReadMarker('nothing new to mark');
     }
 
     Logs().d('Set read marker...', eventId);
