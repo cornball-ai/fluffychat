@@ -631,24 +631,48 @@ class ChatController extends State<ChatPageWithRoom>
 
   Future<void>? _setReadMarkerFuture;
 
+  /// Every refusal below is silent, which is why a room that will not clear
+  /// has to be diagnosed by reading the source and guessing which guard bit.
+  /// Naming the guard turns that into one line of log.
+  void _skipReadMarker(String reason) =>
+      Logs().v('Read marker skipped: $reason (${room.id})');
+
   void setReadMarker({String? eventId}) {
     // Do not send read markers when app is not in foreground
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
-      return;
+      return _skipReadMarker(
+        'app is ${WidgetsBinding.instance.lifecycleState}, not resumed',
+      );
     }
 
     // We are already setting a read marker
-    if (_setReadMarkerFuture != null) return;
+    if (_setReadMarkerFuture != null) {
+      return _skipReadMarker('one is already in flight');
+    }
 
     // We only set read marker if we are at the bottom
-    if (_scrolledUp) return;
+    if (_scrolledUp) {
+      final pixels = scrollController.hasClients
+          ? scrollController.position.pixels.toStringAsFixed(1)
+          : 'no clients';
+      return _skipReadMarker(
+        'scrolled up (pixels $pixels, tolerance $_atBottomTolerance, '
+        'allowNewEvent ${timeline?.allowNewEvent})',
+      );
+    }
 
     // We do not set read marker if we offer user the scroll up banner
-    if (scrollUpBannerEventId != null) return;
+    if (scrollUpBannerEventId != null) {
+      return _skipReadMarker('scroll-up banner showing');
+    }
 
     // We do not set read marker if timeline is empty
     final timeline = this.timeline;
-    if (timeline == null || timeline.events.isEmpty) return;
+    if (timeline == null || timeline.events.isEmpty) {
+      return _skipReadMarker(
+        timeline == null ? 'no timeline' : 'timeline is empty',
+      );
+    }
 
     final setOnLatestEvent = eventId == null;
     eventId ??= pickReadMarkerEvent<Event>(
@@ -667,20 +691,39 @@ class ChatController extends State<ChatPageWithRoom>
     );
 
     // There is no event we could place a read marker
-    if (eventId == null) return;
+    if (eventId == null) {
+      return _skipReadMarker('no event to place it on');
+    }
 
     // This is a sending event, we do not set a readmarker yet
-    if (eventId.isValidMatrixIdStrict() == false) return;
+    if (eventId.isValidMatrixIdStrict() == false) {
+      return _skipReadMarker('event $eventId is still sending');
+    }
 
-    // Already set a read marker on this event
-    if (room.fullyRead == eventId) return;
+    // Already set a read marker on this event -- but only skip if the receipt
+    // landed too.
+    //
+    // `fullyRead` is m.fully_read. The unread badge is drawn from
+    // hasNewMessages, which is about m.read receipts on the newest event.
+    // Those are two different pieces of state and they go out of step: the
+    // marker advances while the receipt does not. Skipping on the marker alone
+    // then means the receipt is never sent, and the room shows as unread
+    // permanently with nothing able to clear it.
+    //
+    // This is the guard that made the room unclearable. Every other fix in
+    // this file is upstream of it, so none of them could reach the send --
+    // while "mark as read" from the room menu worked, because that calls the
+    // SDK directly and never passes through here.
+    if (room.fullyRead == eventId && !room.hasNewMessages) {
+      return _skipReadMarker('already read through $eventId');
+    }
 
     // Set a readmarker on a specific event, not latest, but room is not unread
     // at all.
     if (setOnLatestEvent &&
         !room.hasNewMessages &&
         room.notificationCount == 0) {
-      return;
+      return _skipReadMarker('nothing new to mark');
     }
 
     Logs().d('Set read marker...', eventId);
