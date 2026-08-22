@@ -183,6 +183,23 @@ class ChatController extends State<ChatPageWithRoom>
 
   bool _scrolledUp = false;
 
+  /// Whether this visit has already taken the user back to their last read
+  /// position. See the use site in [_getTimeline].
+  bool _didScrollToReadMarker = false;
+
+  /// How close to the live end counts as being at the bottom.
+  ///
+  /// An exact `pixels == 0` test leaves the room permanently unread whenever
+  /// the offset settles a fraction above zero, because that is the only thing
+  /// that clears [_scrolledUp], and [setReadMarker] refuses to run while it is
+  /// set. Expanding a long message makes that likelier rather than rarer: it
+  /// deliberately moves the offset to hold the message's top edge still.
+  static const double _atBottomTolerance = 8.0;
+
+  bool get _isAtBottom =>
+      scrollController.hasClients &&
+      scrollController.position.pixels <= _atBottomTolerance;
+
   /// Armed when this is the home room and its last activity is older
   /// than the fresh-conversation threshold: the first send prepends
   /// /clear so the bot starts a fresh session. Scrolling up disarms it,
@@ -296,14 +313,14 @@ class ChatController extends State<ChatPageWithRoom>
     }
     if (!scrollController.hasClients) return;
     if (timeline?.allowNewEvent == false ||
-        scrollController.position.pixels > 0 && _scrolledUp == false) {
+        !_isAtBottom && _scrolledUp == false) {
       setState(() {
         _scrolledUp = true;
         // Reading back is a deliberate continuation; the next send
         // must not clear the conversation.
         freshConversationArmed = false;
       });
-    } else if (scrollController.position.pixels <= 0 && _scrolledUp == true) {
+    } else if (_isAtBottom && _scrolledUp == true) {
       setState(() => _scrolledUp = false);
       setReadMarker();
     }
@@ -505,7 +522,15 @@ class ChatController extends State<ChatPageWithRoom>
             .indexWhere((e) => e.eventId == readMarkerEventId);
       }
 
-      if (readMarkerEventIndex > 1) {
+      // Once per visit, not once per timeline load. This returns before the
+      // setReadMarker() below, which is right for taking someone back to
+      // where they left off -- but the timeline reloads for all sorts of
+      // reasons (a decryption retry, a resync), and every reload used to
+      // scroll back up and skip marking the room read. The room could then
+      // never be read: scroll to the bottom, get yanked up by the next
+      // reload, repeat.
+      if (readMarkerEventIndex > 1 && !_didScrollToReadMarker) {
+        _didScrollToReadMarker = true;
         Logs().v('Scroll up to visible event', readMarkerEventId);
         scrollToEventId(readMarkerEventId, highlightEvent: false);
         return;
