@@ -64,6 +64,25 @@ void main() {
     expect(decoded.inputTextEnd, 17);
   });
 
+  test('input_text_end zero keeps presence; absence stays detectable', () {
+    // A leading-silence first chunk legitimately reports offset 0, and a
+    // synthesiser that never implements the field must not look like it.
+    // Presence is what keeps those two apart across the wire.
+    final leadingSilence = AudioChunk(index: 0, durationMs: 200, pcm: [0, 0])
+      ..inputTextEnd = 0;
+    final decoded = AudioChunk.fromBuffer(leadingSilence.writeToBuffer());
+    expect(decoded.hasInputTextEnd(), isTrue);
+    expect(decoded.inputTextEnd, 0);
+
+    // The field left unset decodes as absent -- the client's cue to treat
+    // the server as broken rather than the reply as unspoken.
+    final unstamped = AudioChunk(index: 0, durationMs: 200, pcm: [0, 0]);
+    expect(
+      AudioChunk.fromBuffer(unstamped.writeToBuffer()).hasInputTextEnd(),
+      isFalse,
+    );
+  });
+
   test('transcribe payload discriminates config from audio', () {
     final config = TranscribeRequest(
       config: TranscribeConfig(
@@ -142,9 +161,11 @@ void main() {
     expect(decoded.textToSpeech.security, ChannelSecurity.CHANNEL_SECURITY_TLS);
   });
 
-  test('turn report carries a text offset, zero surviving the wire', () {
-    // text_heard = 0 is the barge-in-before-the-first-word case, and proto3
-    // does not encode zeros -- so this is the decode path that matters.
+  test('turn report distinguishes reported-zero from never-reported', () {
+    // text_heard = 0 is the barge-in-before-the-first-word case. It has to
+    // arrive as an explicit report, because the agent rejects absence rather
+    // than reading it as zero -- otherwise a client that said nothing could
+    // erase a fully-heard reply from history.
     final nothing = ReportTurnRequest(
       sessionId: 's',
       turnId: 't',
@@ -152,7 +173,14 @@ void main() {
       outcome: TurnOutcome.TURN_OUTCOME_BARGE_IN,
     );
     final decoded = ReportTurnRequest.fromBuffer(nothing.writeToBuffer());
+    expect(decoded.hasTextHeard(), isTrue);
     expect(decoded.textHeard, 0);
     expect(decoded.outcome, TurnOutcome.TURN_OUTCOME_BARGE_IN);
+
+    final unreported = ReportTurnRequest(sessionId: 's', turnId: 't');
+    expect(
+      ReportTurnRequest.fromBuffer(unreported.writeToBuffer()).hasTextHeard(),
+      isFalse,
+    );
   });
 }

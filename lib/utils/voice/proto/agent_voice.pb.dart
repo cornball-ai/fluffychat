@@ -701,15 +701,23 @@ class ReportTurnRequest extends $pb.GeneratedMessage {
 
   /// How much of the reply was actually heard, as a count of Unicode code
   /// points of the turn's text (the TextDelta stream, concatenated in order).
-  /// The agent stores that prefix; zero unambiguously means nothing was heard.
+  /// The agent stores that prefix; zero explicitly means nothing was heard.
+  ///
+  /// REQUIRED, and `optional` for exactly that reason: zero is a legitimate
+  /// report (barge-in before the first word), so the field needs presence to
+  /// keep "reported zero" apart from "never reported" -- an implicit uint32
+  /// drops an explicit 0 from the wire and the two collapse. The agent rejects
+  /// a request with the field absent (INVALID_ARGUMENT) instead of reading it
+  /// as zero, which would erase a fully-heard reply from history on the say-so
+  /// of a client that said nothing.
   ///
   /// A TEXT offset, not a chunk count, because the chunk-to-text mapping
   /// exists only inside the synthesiser. A chunk count arriving here is
   /// unusable: the agent never saw how its text was split into audio. The
-  /// client converts where the data lives -- it takes the last fully-heard
-  /// chunk's input_text_end (see AudioChunk in the inference schema) and maps
-  /// it through its own record of which slice of the reply each Synthesize
-  /// call covered.
+  /// client converts where the data lives -- it takes the input_text_end of
+  /// the last chunk playback counted as heard (the client's midpoint rule; see
+  /// AudioChunk in the inference schema) and maps it through its own record of
+  /// which slice of the reply each Synthesize call covered.
   ///
   /// A cumulative count rather than an index for the usual reason: an index
   /// carries a base and an inclusivity convention, each silently wrong on its

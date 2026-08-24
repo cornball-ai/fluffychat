@@ -11,12 +11,27 @@
 // of proxying an audio stream without adding a buffer's worth of delay each
 // way.
 //
-// AUTH. Every call carries a Matrix OpenID token in gRPC metadata as
-// `authorization: Bearer <token>`, obtained by the client from its homeserver
-// (POST /_matrix/client/v3/user/{userId}/openid/request_token) and verified
-// by the agent against the federation endpoint before doing anything. That is
-// what authorises minting an allocation -- room_id in the request is scoping,
-// not authentication, and on its own authorises nothing.
+// AUTH. Every call carries TWO gRPC metadata entries, both obtained from the
+// client's own homeserver via
+// POST /_matrix/client/v3/user/{userId}/openid/request_token:
+//
+//   authorization: Bearer <access_token>   the OpenID token
+//   matrix-server-name: <server_name>      the response's matrix_server_name
+//
+// The server name is not optional and not derivable: it says WHERE the token
+// verifies, and the user's homeserver need not share a domain with room_id or
+// with anything else in the request. The agent verifies by calling
+// GET /_matrix/federation/v1/openid/userinfo?access_token=... on that server
+// (resolved per server discovery), and rejects the call if the metadata entry
+// is missing rather than guessing a host -- verifying against a guessed
+// server is how a token that would never verify appears to.
+//
+// Verification yields an identity; it does not authorise anything by itself.
+// The agent must separately check that the verified user is a member of
+// room_id before minting -- room_id in the request is scoping, not
+// authentication, and OpenID proves who is asking, not that they belong
+// where they are asking to be. The agent may cache a successful verification
+// for the token's lifetime rather than round-tripping per call.
 //
 // This schema predates any implementation. Until a server ships, breaking
 // changes -- renames, renumbers, semantics -- are free and preferred over
@@ -139,15 +154,23 @@ message ReportTurnRequest {
 
   // How much of the reply was actually heard, as a count of Unicode code
   // points of the turn's text (the TextDelta stream, concatenated in order).
-  // The agent stores that prefix; zero unambiguously means nothing was heard.
+  // The agent stores that prefix; zero explicitly means nothing was heard.
+  //
+  // REQUIRED, and `optional` for exactly that reason: zero is a legitimate
+  // report (barge-in before the first word), so the field needs presence to
+  // keep "reported zero" apart from "never reported" -- an implicit uint32
+  // drops an explicit 0 from the wire and the two collapse. The agent rejects
+  // a request with the field absent (INVALID_ARGUMENT) instead of reading it
+  // as zero, which would erase a fully-heard reply from history on the say-so
+  // of a client that said nothing.
   //
   // A TEXT offset, not a chunk count, because the chunk-to-text mapping
   // exists only inside the synthesiser. A chunk count arriving here is
   // unusable: the agent never saw how its text was split into audio. The
-  // client converts where the data lives -- it takes the last fully-heard
-  // chunk's input_text_end (see AudioChunk in the inference schema) and maps
-  // it through its own record of which slice of the reply each Synthesize
-  // call covered.
+  // client converts where the data lives -- it takes the input_text_end of
+  // the last chunk playback counted as heard (the client's midpoint rule; see
+  // AudioChunk in the inference schema) and maps it through its own record of
+  // which slice of the reply each Synthesize call covered.
   //
   // A cumulative count rather than an index for the usual reason: an index
   // carries a base and an inclusivity convention, each silently wrong on its
@@ -159,7 +182,7 @@ message ReportTurnRequest {
   // of text spoken, so the two truncation points do not coincide and this one
   // cuts further back. Storing the generation cut instead attributes unspoken
   // sentences to the assistant.
-  uint32 text_heard = 3;
+  optional uint32 text_heard = 3;
 
   // Why the reply was cut, for the record.
   TurnOutcome outcome = 4;

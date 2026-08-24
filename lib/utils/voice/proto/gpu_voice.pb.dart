@@ -832,6 +832,14 @@ class AudioChunk extends $pb.GeneratedMessage {
   /// the input. A chunk that voices no text (silence, breath, prosody padding)
   /// repeats the previous chunk's value.
   ///
+  /// REQUIRED ON EVERY CHUNK, and `optional` precisely so that requirement is
+  /// checkable: zero is a legitimate value (a leading-silence first chunk),
+  /// so without presence a synthesiser that never implements this field is
+  /// indistinguishable from one reporting nothing voiced yet -- every offset
+  /// reads 0, the client reports text_heard 0, and a fully-heard reply is
+  /// stored as never spoken. The client treats a chunk with the field absent
+  /// as a server bug: INTERNAL, hang up.
+  ///
   /// This field exists because only the synthesiser knows how it split text
   /// into audio, and truncation is meaningless in chunks: the agent storing
   /// "what was actually said" needs a TEXT boundary. Without it, a chunk count
