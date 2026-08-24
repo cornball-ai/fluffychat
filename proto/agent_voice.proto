@@ -1,0 +1,152 @@
+// SPDX-FileCopyrightText: 2026-Present cornball.ai
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Agent wire for live voice. Served by the agent, not by the model host.
+//
+// Audio never crosses this service. The client streams PCM directly to the
+// model host and receives synthesised audio directly from it; only text and
+// session control travel here. That is the whole latency argument for talking
+// to the inference hosts directly, and it also keeps the agent out of the job
+// of proxying an audio stream without adding a buffer's worth of delay each
+// way.
+
+syntax = "proto3";
+
+package cornball.agent.v1;
+
+service AgentVoice {
+  // Opens a voice session and returns where to send audio, plus a credential
+  // scoped to it.
+  rpc AllocateVoice(AllocateVoiceRequest) returns (AllocateVoiceResponse);
+
+  // One conversational turn. Text in, tokens out as they are generated so the
+  // client can begin synthesising before generation finishes.
+  rpc Converse(ConverseRequest) returns (stream ConverseEvent);
+
+  // How much of a spoken reply actually reached the user.
+  rpc ReportTurn(ReportTurnRequest) returns (ReportTurnResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Session setup
+// ---------------------------------------------------------------------------
+
+message AllocateVoiceRequest {
+  // Matrix room the conversation belongs to.
+  string room_id = 1;
+}
+
+message AllocateVoiceResponse {
+  string session_id = 1;
+
+  // Where the client opens its two media streams. Separate fields rather than
+  // one host because the two models need not be co-resident.
+  Endpoint speech_to_text = 2;
+  Endpoint text_to_speech = 3;
+
+  // Allocation-scoped bearer, sent by the client to the endpoints above as
+  // `authorization: Bearer <token>`.
+  //
+  // Short lived and scoped to this allocation. The client is a Matrix client
+  // that runs on phones, so it must never hold the long-lived host credential:
+  // a leak of this one expires, and cannot be replayed against another
+  // allocation.
+  string token = 4;
+
+  // Absolute expiry, not a duration, so a client with a slow start does not
+  // measure the TTL from the wrong instant.
+  int64 expires_at_unix_ms = 5;
+}
+
+message Endpoint {
+  // Tailnet name. Resolution is the tailnet's job.
+  string host = 1;
+  uint32 port = 2;
+
+  // False when the channel runs unencrypted over WireGuard, which is the
+  // normal tailnet case. Stated explicitly so an insecure channel is always a
+  // decision the server declared, never a client default.
+  bool tls = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Turns
+// ---------------------------------------------------------------------------
+
+message ConverseRequest {
+  string session_id = 1;
+
+  // Stable transcript of what the user said, as returned by SpeechToText.
+  string text = 2;
+}
+
+message ConverseEvent {
+  oneof event {
+    TurnStart start = 1;
+    TextDelta delta = 2;
+    TurnEnd end = 3;
+  }
+}
+
+message TurnStart {
+  // Identifies this reply for ReportTurn. The client cannot use the Matrix
+  // event id: the message has not been sent yet, and what finally gets stored
+  // depends on how much of the reply the user heard.
+  string turn_id = 1;
+}
+
+message TextDelta {
+  // Appended to what came before, unlike a provisional transcript, which
+  // replaces.
+  string text = 1;
+}
+
+message TurnEnd {
+  // Set when generation stopped early rather than completing.
+  string stop_reason = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Truncation reporting
+// ---------------------------------------------------------------------------
+
+message ReportTurnRequest {
+  string session_id = 1;
+  string turn_id = 2;
+
+  // A COUNT of chunks heard, not an index of the last one.
+  //
+  // An index has to carry two conventions to be read correctly (which end it
+  // counts from, and whether it includes itself), and each is silently wrong
+  // on its own. A count carries neither: `take(n)` here and the equivalent
+  // one-based slice in R are both correct from the same integer, so there is
+  // no conversion site. Zero is unambiguously "nothing was heard", which also
+  // removes the need for a separate absent-versus-zero signal.
+  //
+  // Distinct from where generation was cancelled. Text generated is a superset
+  // of text spoken, so the two truncation points do not coincide and this one
+  // cuts further back. Storing the generation cut instead attributes unspoken
+  // sentences to the assistant.
+  uint32 chunks_heard = 3;
+
+  // Why the reply was cut, for the record.
+  TurnOutcome outcome = 4;
+}
+
+enum TurnOutcome {
+  TURN_OUTCOME_UNSPECIFIED = 0;
+  // Played all the way out.
+  TURN_OUTCOME_COMPLETED = 1;
+  // The user talked over it.
+  TURN_OUTCOME_BARGE_IN = 2;
+  // The user ended the session, or it dropped.
+  TURN_OUTCOME_ABANDONED = 3;
+}
+
+message ReportTurnResponse {
+  // What the agent actually stored, after truncating to chunks_heard. Returned
+  // so the client can render the same text the room history holds rather than
+  // its own guess at where the cut landed.
+  string stored_text = 1;
+}
