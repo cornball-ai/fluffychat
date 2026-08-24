@@ -21,5 +21,10 @@ protoc --dart_out=grpc:lib/utils/voice/proto -I proto \
     proto/gpu_voice.proto \
     proto/agent_voice.proto
 
+# The pbjson descriptors are reflection constants nothing imports, and CI's
+# unused-file check rightly flags them. protoc-gen-dart has no flag to skip
+# them, so they are dropped here instead.
+rm lib/utils/voice/proto/*.pbjson.dart
+
 echo "regenerated:"
 ls -1 lib/utils/voice/proto/
