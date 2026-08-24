@@ -642,10 +642,7 @@ class HtmlMessage extends StatelessWidget {
 /// Inline code sits inside a sentence and has to wrap with it.
 Widget _codeBody({required bool isInline, required Widget child}) {
   if (isInline) return child;
-  return SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: child,
-  );
+  return SingleChildScrollView(scrollDirection: Axis.horizontal, child: child);
 }
 
 /// Height of a single line in [style], so a line-count setting can become the

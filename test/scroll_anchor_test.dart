@@ -174,7 +174,8 @@ void main() {
     expect(
       (tester.getTopLeft(find.byKey(sizeKey)).dy - topBefore).abs(),
       greaterThan(10.0),
-      reason: 'an animated height no longer breaks the anchor -- if that is '
+      reason:
+          'an animated height no longer breaks the anchor -- if that is '
           'genuinely true now, the message widget can animate again',
     );
   });

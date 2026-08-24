@@ -54,21 +54,12 @@ void main() {
 
   test('skips events that are not displayable', () {
     // Membership changes and the like are not somewhere to leave a receipt.
-    expect(
-      _pick(const [
-        _Ev('state', displayable: false),
-        _Ev('msg'),
-      ]),
-      'msg',
-    );
+    expect(_pick(const [_Ev('state', displayable: false), _Ev('msg')]), 'msg');
   });
 
   test('nothing displayable means nothing to mark', () {
     expect(
-      _pick(const [
-        _Ev('x', displayable: false),
-        _Ev('y', displayable: false),
-      ]),
+      _pick(const [_Ev('x', displayable: false), _Ev('y', displayable: false)]),
       isNull,
     );
   });
@@ -87,10 +78,7 @@ void main() {
     // notification count came from, so a notice arriving afterwards must not
     // pull it forward past an unread mention.
     expect(
-      _pick(const [
-        _Ev('notice'),
-        _Ev('mention', notifies: true),
-      ]),
+      _pick(const [_Ev('notice'), _Ev('mention', notifies: true)]),
       'mention',
     );
   });

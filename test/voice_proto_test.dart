@@ -34,11 +34,7 @@ void main() {
   test('chunk index 0 survives a round trip', () {
     // Proto3 does not encode default values, so the first chunk's index is
     // the one that exercises the "field absent means zero" decode path.
-    final chunk = AudioChunk(
-      index: 0,
-      durationMs: 480,
-      pcm: [1, 2, 3],
-    );
+    final chunk = AudioChunk(index: 0, durationMs: 480, pcm: [1, 2, 3]);
     final decoded = AudioChunk.fromBuffer(chunk.writeToBuffer());
     expect(decoded.index, 0);
     expect(decoded.durationMs, 480);

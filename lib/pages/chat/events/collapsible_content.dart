@@ -48,7 +48,11 @@ class CollapsibleContent extends StatefulWidget {
 
   /// Builds the expand/collapse control. Only called when the content actually
   /// overflows, which is measured rather than guessed.
-  final Widget Function(BuildContext context, bool expanded, VoidCallback toggle)
+  final Widget Function(
+    BuildContext context,
+    bool expanded,
+    VoidCallback toggle,
+  )
   controlBuilder;
 
   const CollapsibleContent({
