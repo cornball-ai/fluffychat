@@ -501,6 +501,10 @@ class SynthesizeRequest extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<SynthesizeRequest>(create);
   static SynthesizeRequest? _defaultInstance;
 
+  /// Text to speak, exactly as the caller holds it. Offsets in AudioChunk
+  /// index into THIS string, so the synthesiser must compute them against the
+  /// input as received, before any internal normalisation (numbers read as
+  /// words, abbreviations expanded, and so on).
   @$pb.TagNumber(1)
   $core.String get text => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -630,6 +634,13 @@ class SynthesisEvent extends $pb.GeneratedMessage {
   AudioChunk ensureChunk() => $_ensure(1);
 }
 
+/// MUST be the first event on the stream, exactly once. A chunk arriving
+/// before it is a server bug the client treats as INTERNAL and hangs up on:
+/// playing audio at a guessed sample rate produces plausible sound at the
+/// wrong pitch and no error.
+///
+/// Audio is always mono. A second channel doubles the bytes and carries
+/// nothing; a synthesiser that only produces stereo downmixes before sending.
 class SynthesisStart extends $pb.GeneratedMessage {
   factory SynthesisStart({
     $core.int? totalChunks,
@@ -723,11 +734,13 @@ class AudioChunk extends $pb.GeneratedMessage {
     $core.int? index,
     $core.int? durationMs,
     $core.List<$core.int>? pcm,
+    $core.int? inputTextEnd,
   }) {
     final result = create();
     if (index != null) result.index = index;
     if (durationMs != null) result.durationMs = durationMs;
     if (pcm != null) result.pcm = pcm;
+    if (inputTextEnd != null) result.inputTextEnd = inputTextEnd;
     return result;
   }
 
@@ -749,6 +762,8 @@ class AudioChunk extends $pb.GeneratedMessage {
     ..aI(2, _omitFieldNames ? '' : 'durationMs', fieldType: $pb.PbFieldType.OU3)
     ..a<$core.List<$core.int>>(
         3, _omitFieldNames ? '' : 'pcm', $pb.PbFieldType.OY)
+    ..aI(4, _omitFieldNames ? '' : 'inputTextEnd',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -810,6 +825,33 @@ class AudioChunk extends $pb.GeneratedMessage {
   $core.bool hasPcm() => $_has(2);
   @$pb.TagNumber(3)
   void clearPcm() => $_clearField(3);
+
+  /// Cumulative end of the text this chunk voices, as a count of Unicode code
+  /// points into SynthesizeRequest.text as received. After hearing this chunk
+  /// in full, the listener has heard the first `input_text_end` code points of
+  /// the input. A chunk that voices no text (silence, breath, prosody padding)
+  /// repeats the previous chunk's value.
+  ///
+  /// This field exists because only the synthesiser knows how it split text
+  /// into audio, and truncation is meaningless in chunks: the agent storing
+  /// "what was actually said" needs a TEXT boundary. Without it, a chunk count
+  /// reaches the agent and there is nothing the agent can do with it -- the
+  /// chunk-to-text mapping died inside this service. Cumulative counts also
+  /// survive chunk merging: however chunks are split or coalesced, the last
+  /// heard chunk's value is always the answer.
+  ///
+  /// Code points, not bytes and not UTF-16 units, because the two ends
+  /// disagree by default here too: this side's language counts characters,
+  /// the client's counts UTF-16 code units, and the wire carries UTF-8.
+  /// Code points are the one unit everyone can produce exactly.
+  @$pb.TagNumber(4)
+  $core.int get inputTextEnd => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set inputTextEnd($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasInputTextEnd() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearInputTextEnd() => $_clearField(4);
 }
 
 const $core.bool _omitFieldNames =

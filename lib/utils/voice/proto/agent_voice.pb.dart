@@ -202,12 +202,12 @@ class Endpoint extends $pb.GeneratedMessage {
   factory Endpoint({
     $core.String? host,
     $core.int? port,
-    $core.bool? tls,
+    ChannelSecurity? security,
   }) {
     final result = create();
     if (host != null) result.host = host;
     if (port != null) result.port = port;
-    if (tls != null) result.tls = tls;
+    if (security != null) result.security = security;
     return result;
   }
 
@@ -227,7 +227,8 @@ class Endpoint extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'host')
     ..aI(2, _omitFieldNames ? '' : 'port', fieldType: $pb.PbFieldType.OU3)
-    ..aOB(3, _omitFieldNames ? '' : 'tls')
+    ..aE<ChannelSecurity>(3, _omitFieldNames ? '' : 'security',
+        enumValues: ChannelSecurity.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -267,17 +268,19 @@ class Endpoint extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearPort() => $_clearField(2);
 
-  /// False when the channel runs unencrypted over WireGuard, which is the
-  /// normal tailnet case. Stated explicitly so an insecure channel is always a
-  /// decision the server declared, never a client default.
+  /// The server's declared transport security. Three states on purpose: a
+  /// plain bool cannot tell "the server said insecure" from "the server said
+  /// nothing" (proto3 serialises false as absent), which silently turns
+  /// absence into an insecure default -- the exact opposite of a declaration.
+  /// A client receiving UNSPECIFIED refuses to connect.
   @$pb.TagNumber(3)
-  $core.bool get tls => $_getBF(2);
+  ChannelSecurity get security => $_getN(2);
   @$pb.TagNumber(3)
-  set tls($core.bool value) => $_setBool(2, value);
+  set security(ChannelSecurity value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasTls() => $_has(2);
+  $core.bool hasSecurity() => $_has(2);
   @$pb.TagNumber(3)
-  void clearTls() => $_clearField(3);
+  void clearSecurity() => $_clearField(3);
 }
 
 class ConverseRequest extends $pb.GeneratedMessage {
@@ -627,13 +630,13 @@ class ReportTurnRequest extends $pb.GeneratedMessage {
   factory ReportTurnRequest({
     $core.String? sessionId,
     $core.String? turnId,
-    $core.int? chunksHeard,
+    $core.int? textHeard,
     TurnOutcome? outcome,
   }) {
     final result = create();
     if (sessionId != null) result.sessionId = sessionId;
     if (turnId != null) result.turnId = turnId;
-    if (chunksHeard != null) result.chunksHeard = chunksHeard;
+    if (textHeard != null) result.textHeard = textHeard;
     if (outcome != null) result.outcome = outcome;
     return result;
   }
@@ -654,8 +657,7 @@ class ReportTurnRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'sessionId')
     ..aOS(2, _omitFieldNames ? '' : 'turnId')
-    ..aI(3, _omitFieldNames ? '' : 'chunksHeard',
-        fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'textHeard', fieldType: $pb.PbFieldType.OU3)
     ..aE<TurnOutcome>(4, _omitFieldNames ? '' : 'outcome',
         enumValues: TurnOutcome.values)
     ..hasRequiredFields = false;
@@ -697,27 +699,36 @@ class ReportTurnRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearTurnId() => $_clearField(2);
 
-  /// A COUNT of chunks heard, not an index of the last one.
+  /// How much of the reply was actually heard, as a count of Unicode code
+  /// points of the turn's text (the TextDelta stream, concatenated in order).
+  /// The agent stores that prefix; zero unambiguously means nothing was heard.
   ///
-  /// An index has to carry two conventions to be read correctly (which end it
-  /// counts from, and whether it includes itself), and each is silently wrong
-  /// on its own. A count carries neither: `take(n)` here and the equivalent
-  /// one-based slice in R are both correct from the same integer, so there is
-  /// no conversion site. Zero is unambiguously "nothing was heard", which also
-  /// removes the need for a separate absent-versus-zero signal.
+  /// A TEXT offset, not a chunk count, because the chunk-to-text mapping
+  /// exists only inside the synthesiser. A chunk count arriving here is
+  /// unusable: the agent never saw how its text was split into audio. The
+  /// client converts where the data lives -- it takes the last fully-heard
+  /// chunk's input_text_end (see AudioChunk in the inference schema) and maps
+  /// it through its own record of which slice of the reply each Synthesize
+  /// call covered.
+  ///
+  /// A cumulative count rather than an index for the usual reason: an index
+  /// carries a base and an inclusivity convention, each silently wrong on its
+  /// own; a count carries neither, so there is no conversion site to get
+  /// wrong. Code points rather than bytes or UTF-16 units because that is the
+  /// one unit both ends can produce exactly.
   ///
   /// Distinct from where generation was cancelled. Text generated is a superset
   /// of text spoken, so the two truncation points do not coincide and this one
   /// cuts further back. Storing the generation cut instead attributes unspoken
   /// sentences to the assistant.
   @$pb.TagNumber(3)
-  $core.int get chunksHeard => $_getIZ(2);
+  $core.int get textHeard => $_getIZ(2);
   @$pb.TagNumber(3)
-  set chunksHeard($core.int value) => $_setUnsignedInt32(2, value);
+  set textHeard($core.int value) => $_setUnsignedInt32(2, value);
   @$pb.TagNumber(3)
-  $core.bool hasChunksHeard() => $_has(2);
+  $core.bool hasTextHeard() => $_has(2);
   @$pb.TagNumber(3)
-  void clearChunksHeard() => $_clearField(3);
+  void clearTextHeard() => $_clearField(3);
 
   /// Why the reply was cut, for the record.
   @$pb.TagNumber(4)
@@ -775,9 +786,10 @@ class ReportTurnResponse extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<ReportTurnResponse>(create);
   static ReportTurnResponse? _defaultInstance;
 
-  /// What the agent actually stored, after truncating to chunks_heard. Returned
-  /// so the client can render the same text the room history holds rather than
-  /// its own guess at where the cut landed.
+  /// What the agent actually stored: the first text_heard code points of the
+  /// reply, possibly tidied to a word boundary. Returned so the client can
+  /// render the same text the room history holds rather than its own guess at
+  /// where the cut landed.
   @$pb.TagNumber(1)
   $core.String get storedText => $_getSZ(0);
   @$pb.TagNumber(1)

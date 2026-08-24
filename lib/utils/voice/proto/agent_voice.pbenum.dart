@@ -14,6 +14,32 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+class ChannelSecurity extends $pb.ProtobufEnum {
+  /// Absent or unset. Never valid to connect on.
+  static const ChannelSecurity CHANNEL_SECURITY_UNSPECIFIED = ChannelSecurity._(
+      0, _omitEnumNames ? '' : 'CHANNEL_SECURITY_UNSPECIFIED');
+  static const ChannelSecurity CHANNEL_SECURITY_TLS =
+      ChannelSecurity._(1, _omitEnumNames ? '' : 'CHANNEL_SECURITY_TLS');
+
+  /// Unencrypted channel, for links already encrypted below gRPC -- the normal
+  /// WireGuard-tailnet case. Valid only because the server declared it.
+  static const ChannelSecurity CHANNEL_SECURITY_INSECURE =
+      ChannelSecurity._(2, _omitEnumNames ? '' : 'CHANNEL_SECURITY_INSECURE');
+
+  static const $core.List<ChannelSecurity> values = <ChannelSecurity>[
+    CHANNEL_SECURITY_UNSPECIFIED,
+    CHANNEL_SECURITY_TLS,
+    CHANNEL_SECURITY_INSECURE,
+  ];
+
+  static final $core.List<ChannelSecurity?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static ChannelSecurity? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ChannelSecurity._(super.value, super.name);
+}
+
 class TurnOutcome extends $pb.ProtobufEnum {
   static const TurnOutcome TURN_OUTCOME_UNSPECIFIED =
       TurnOutcome._(0, _omitEnumNames ? '' : 'TURN_OUTCOME_UNSPECIFIED');

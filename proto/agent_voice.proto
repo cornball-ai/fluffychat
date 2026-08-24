@@ -10,6 +10,17 @@
 // to the inference hosts directly, and it also keeps the agent out of the job
 // of proxying an audio stream without adding a buffer's worth of delay each
 // way.
+//
+// AUTH. Every call carries a Matrix OpenID token in gRPC metadata as
+// `authorization: Bearer <token>`, obtained by the client from its homeserver
+// (POST /_matrix/client/v3/user/{userId}/openid/request_token) and verified
+// by the agent against the federation endpoint before doing anything. That is
+// what authorises minting an allocation -- room_id in the request is scoping,
+// not authentication, and on its own authorises nothing.
+//
+// This schema predates any implementation. Until a server ships, breaking
+// changes -- renames, renumbers, semantics -- are free and preferred over
+// compatibility shims.
 
 syntax = "proto3";
 
@@ -64,10 +75,21 @@ message Endpoint {
   string host = 1;
   uint32 port = 2;
 
-  // False when the channel runs unencrypted over WireGuard, which is the
-  // normal tailnet case. Stated explicitly so an insecure channel is always a
-  // decision the server declared, never a client default.
-  bool tls = 3;
+  // The server's declared transport security. Three states on purpose: a
+  // plain bool cannot tell "the server said insecure" from "the server said
+  // nothing" (proto3 serialises false as absent), which silently turns
+  // absence into an insecure default -- the exact opposite of a declaration.
+  // A client receiving UNSPECIFIED refuses to connect.
+  ChannelSecurity security = 3;
+}
+
+enum ChannelSecurity {
+  // Absent or unset. Never valid to connect on.
+  CHANNEL_SECURITY_UNSPECIFIED = 0;
+  CHANNEL_SECURITY_TLS = 1;
+  // Unencrypted channel, for links already encrypted below gRPC -- the normal
+  // WireGuard-tailnet case. Valid only because the server declared it.
+  CHANNEL_SECURITY_INSECURE = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,20 +137,29 @@ message ReportTurnRequest {
   string session_id = 1;
   string turn_id = 2;
 
-  // A COUNT of chunks heard, not an index of the last one.
+  // How much of the reply was actually heard, as a count of Unicode code
+  // points of the turn's text (the TextDelta stream, concatenated in order).
+  // The agent stores that prefix; zero unambiguously means nothing was heard.
   //
-  // An index has to carry two conventions to be read correctly (which end it
-  // counts from, and whether it includes itself), and each is silently wrong
-  // on its own. A count carries neither: `take(n)` here and the equivalent
-  // one-based slice in R are both correct from the same integer, so there is
-  // no conversion site. Zero is unambiguously "nothing was heard", which also
-  // removes the need for a separate absent-versus-zero signal.
+  // A TEXT offset, not a chunk count, because the chunk-to-text mapping
+  // exists only inside the synthesiser. A chunk count arriving here is
+  // unusable: the agent never saw how its text was split into audio. The
+  // client converts where the data lives -- it takes the last fully-heard
+  // chunk's input_text_end (see AudioChunk in the inference schema) and maps
+  // it through its own record of which slice of the reply each Synthesize
+  // call covered.
+  //
+  // A cumulative count rather than an index for the usual reason: an index
+  // carries a base and an inclusivity convention, each silently wrong on its
+  // own; a count carries neither, so there is no conversion site to get
+  // wrong. Code points rather than bytes or UTF-16 units because that is the
+  // one unit both ends can produce exactly.
   //
   // Distinct from where generation was cancelled. Text generated is a superset
   // of text spoken, so the two truncation points do not coincide and this one
   // cuts further back. Storing the generation cut instead attributes unspoken
   // sentences to the assistant.
-  uint32 chunks_heard = 3;
+  uint32 text_heard = 3;
 
   // Why the reply was cut, for the record.
   TurnOutcome outcome = 4;
@@ -145,8 +176,9 @@ enum TurnOutcome {
 }
 
 message ReportTurnResponse {
-  // What the agent actually stored, after truncating to chunks_heard. Returned
-  // so the client can render the same text the room history holds rather than
-  // its own guess at where the cut landed.
+  // What the agent actually stored: the first text_heard code points of the
+  // reply, possibly tidied to a word boundary. Returned so the client can
+  // render the same text the room history holds rather than its own guess at
+  // where the cut landed.
   string stored_text = 1;
 }
