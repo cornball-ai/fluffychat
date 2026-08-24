@@ -373,7 +373,7 @@ class HtmlMessage extends StatelessWidget {
               padding: isInline
                   ? const EdgeInsets.symmetric(horizontal: 4.0)
                   : const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: _codeBody(
+              child: _CodeBody(
                 isInline: isInline,
                 child: Text.rich(
                   TextSpan(children: [_renderCodeBlockNode(element)]),
@@ -640,9 +640,20 @@ class HtmlMessage extends StatelessWidget {
 /// scrolled to, and leaves the indentation meaning what it says.
 ///
 /// Inline code sits inside a sentence and has to wrap with it.
-Widget _codeBody({required bool isInline, required Widget child}) {
-  if (isInline) return child;
-  return SingleChildScrollView(scrollDirection: Axis.horizontal, child: child);
+class _CodeBody extends StatelessWidget {
+  final bool isInline;
+  final Widget child;
+
+  const _CodeBody({required this.isInline, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (isInline) return child;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: child,
+    );
+  }
 }
 
 /// Height of a single line in [style], so a line-count setting can become the
