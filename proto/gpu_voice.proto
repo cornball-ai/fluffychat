@@ -1,0 +1,159 @@
+// SPDX-FileCopyrightText: 2026-Present cornball.ai
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Inference wire for live voice. Served by the model host.
+//
+// Both services are pure inference: they answer and hang up. Neither knows
+// what an agent is, neither calls anything, and neither holds conversation
+// state. Turn orchestration lives in the client, which holds both streams and
+// can therefore cancel them together when the user interrupts.
+//
+// Auth is an allocation token in gRPC metadata as
+// `authorization: Bearer <base64>`. Clients receive a short-lived, allocation
+// scoped token; the long-lived credential stays server side.
+
+syntax = "proto3";
+
+package cornball.voice.v1;
+
+// ---------------------------------------------------------------------------
+// Shared
+// ---------------------------------------------------------------------------
+
+enum AudioEncoding {
+  AUDIO_ENCODING_UNSPECIFIED = 0;
+  // Signed 16-bit little-endian PCM, interleaved. The only format live voice
+  // uses: Opus would add encode and decode latency on the one path where
+  // latency is the product.
+  AUDIO_ENCODING_PCM_S16LE = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Speech to text
+// ---------------------------------------------------------------------------
+
+service SpeechToText {
+  // Bidirectional: audio flows up for as long as the microphone is open,
+  // transcript events flow down as they are produced.
+  rpc Transcribe(stream TranscribeRequest) returns (stream TranscribeEvent);
+}
+
+message TranscribeRequest {
+  oneof payload {
+    // MUST be the first message on the stream. Sending audio first is an
+    // INVALID_ARGUMENT, not a default-config fallback: silently transcribing
+    // at the wrong sample rate produces plausible text and no error.
+    TranscribeConfig config = 1;
+
+    // Raw samples. Frame size is whatever the capture platform produced and is
+    // explicitly NOT constant, so the server must not infer timing from the
+    // number of bytes in any single message.
+    bytes audio = 2;
+  }
+}
+
+message TranscribeConfig {
+  uint32 sample_rate_hz = 1;
+  uint32 channels = 2;
+  AudioEncoding encoding = 3;
+
+  // BCP-47. Empty means let the model decide.
+  string language = 4;
+
+  // Empty means the host's resident default.
+  string model = 5;
+}
+
+message TranscribeEvent {
+  oneof event {
+    Transcript transcript = 1;
+    SpeechEnded speech_ended = 2;
+  }
+}
+
+message Transcript {
+  string text = 1;
+
+  // True once this text will not be revised. A provisional transcript
+  // REPLACES the previous provisional one rather than appending to it, so a
+  // client renders the last provisional it saw, not the concatenation.
+  bool stable = 2;
+}
+
+// Endpointing: the model's judgment that the speaker finished a turn.
+//
+// Deliberately server side. The client has an energy-threshold barge-in
+// detector, but that decides "stop the speaker now", which is a different
+// question from "the human's turn is over" and cannot answer it. A pause for
+// breath and the end of a sentence look identical to an energy threshold.
+message SpeechEnded {
+  // Offset into the audio stream where the turn ended, so a client can
+  // attribute it against what it sent.
+  uint64 audio_offset_ms = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Text to speech
+// ---------------------------------------------------------------------------
+
+service TextToSpeech {
+  // Server streaming: chunks are emitted as they are synthesised so the first
+  // word plays before the last is generated. Barge-in is ordinary gRPC stream
+  // cancellation by the client.
+  rpc Synthesize(SynthesizeRequest) returns (stream SynthesisEvent);
+}
+
+message SynthesizeRequest {
+  string text = 1;
+  string voice = 2;
+
+  // Empty means the host's resident default.
+  string model = 3;
+
+  // 0 means the model's native rate.
+  uint32 sample_rate_hz = 4;
+}
+
+message SynthesisEvent {
+  oneof event {
+    SynthesisStart start = 1;
+    AudioChunk chunk = 2;
+  }
+}
+
+message SynthesisStart {
+  // How many chunks will be sent, when the synthesiser knows in advance.
+  //
+  // `optional` on purpose: absent and zero are different states, and a client
+  // reporting how many chunks were dropped needs to tell "none were dropped"
+  // apart from "the server never said". Collapsing those two into 0 is how a
+  // truncation report ends up plausible and wrong.
+  optional uint32 total_chunks = 1;
+
+  uint32 sample_rate_hz = 2;
+  AudioEncoding encoding = 3;
+}
+
+message AudioChunk {
+  // ZERO-BASED. Diagnostic only.
+  //
+  // Pinned here because this is the field where the two ends disagree by
+  // default: the synthesis side is written in a one-based language whose emit
+  // loop naturally hands out 1 for the first chunk, while the wire and the
+  // Dart client start at 0. Neither default is unreasonable, which is why the
+  // convention has to be stated at the field rather than assumed at either
+  // end.
+  //
+  // Clients do not do arithmetic with this. How much of a reply was heard is
+  // reported as a count (see AgentVoice.ReportTurn), which carries no base and
+  // no inclusivity convention and therefore has no conversion site to get
+  // wrong.
+  uint32 index = 1;
+
+  // Full playable length of this chunk. The client needs it to decide whether
+  // a chunk cut mid-playback counts as heard, without reading a clock itself.
+  uint32 duration_ms = 2;
+
+  bytes pcm = 3;
+}
