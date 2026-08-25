@@ -64,6 +64,12 @@ class PcmCapture {
   StreamSubscription<Uint8List>? _subscription;
   bool _running = false;
 
+  // Held for the whole of start() so a second call awaits the first instead
+  // of racing it: the _running check alone is decided before start()'s first
+  // await, so two concurrent calls used to both pass it and open the
+  // recorder twice.
+  Future<bool>? _starting;
+
   bool get isRunning => _running;
 
   /// Whether the user has granted microphone access.
@@ -73,13 +79,54 @@ class PcmCapture {
   ///
   /// Returns false without starting if permission is refused, so callers can
   /// tell "declined" apart from "started and produced nothing".
-  Future<bool> start(void Function(Uint8List frame) onFrame) async {
+  ///
+  /// [onEnded] fires once if capture dies from underneath the caller -- the
+  /// platform closing the stream, or an error on it -- with the error when
+  /// there was one and null for a plain close. By the time it fires,
+  /// [isRunning] is already false. It does not fire for a caller-initiated
+  /// [stop]: the caller knows about that one, and a session tearing itself
+  /// down must be able to tell "I stopped it" from "it fell over", because
+  /// only the second one is worth surfacing to the user.
+  Future<bool> start(
+    void Function(Uint8List frame) onFrame, {
+    void Function(Object? error)? onEnded,
+  }) {
+    final inFlight = _starting;
+    if (inFlight != null) return inFlight;
+    final attempt = _start(onFrame, onEnded);
+    _starting = attempt;
+    return attempt.whenComplete(() => _starting = null);
+  }
+
+  Future<bool> _start(
+    void Function(Uint8List frame) onFrame,
+    void Function(Object? error)? onEnded,
+  ) async {
     if (_running) return true;
     if (!await _recorder.hasPermission()) return false;
 
     final stream = await _recorder.startStream(liveVoiceRecordConfig);
     _running = true;
-    _subscription = stream.listen(onFrame);
+    _subscription = stream.listen(
+      onFrame,
+      // Without these, a recorder that dies leaves isRunning true and the
+      // error becomes an unhandled zone error instead of a signal: the
+      // session keeps waiting on a microphone that no longer exists.
+      onError: (Object error) {
+        _running = false;
+        _subscription = null;
+        onEnded?.call(error);
+      },
+      onDone: () {
+        // stop() flips _running before cancelling, so a done event arriving
+        // from our own cancel finds it already false and stays silent.
+        if (!_running) return;
+        _running = false;
+        _subscription = null;
+        onEnded?.call(null);
+      },
+      cancelOnError: true,
+    );
     return true;
   }
 
