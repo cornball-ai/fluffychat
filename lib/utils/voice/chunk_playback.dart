@@ -28,12 +28,14 @@
 /// that, unambiguously, with no absent-versus-zero branch for a receiver to
 /// forget.
 ///
-/// Turning a count into *which sentences were said* still relies on synthesis
-/// chunks mapping one-to-one onto text pieces, and that is an assumption held
-/// where the split is made, not a fact observable from here. If chunks are ever
-/// merged for prosody, or one carries only punctuation or silence, the mapping
-/// shifts with nothing raised. That invariant has to be asserted at synthesis
-/// time, where it is cheap and can fail loudly.
+/// Turning a count into *which text was said* is not this class's job and no
+/// longer rests on chunks mapping one-to-one onto text pieces: each chunk now
+/// arrives stamped with a cumulative text offset (`input_text_end` on the
+/// wire), so the conversion reads the stamp of the last heard chunk instead
+/// of assuming anything about how the synthesiser split. Merged or
+/// silence-only chunks just repeat the previous stamp. See
+/// HeardOffsetLedger, which turns the per-segment stamp into the turn-global
+/// offset the report carries.
 ///
 /// Distinct from wherever generation was cancelled. Text that was generated is
 /// a superset of text that was spoken, so the two truncation points do not
@@ -64,9 +66,9 @@ class ChunkPlayback {
 
   /// How many chunks the user is counted as having heard. Zero means none.
   ///
-  /// A chunk still playing counts when it is **past halfway** -- heard more
-  /// than half of it, count it as said. A chunk cut before its midpoint does
-  /// not count. A zero-length chunk counts, since there was nothing to miss.
+  /// A chunk still playing counts once it is **at least halfway** -- exactly
+  /// half counts as heard, which is what `>=` below implements and the tests
+  /// pin. A chunk cut before its midpoint does not count. A zero-length chunk counts, since there was nothing to miss.
   int get chunksHeard {
     if (!_inProgress) return _completed;
     return _elapsed * 2 >= _currentDuration ? _completed + 1 : _completed;
