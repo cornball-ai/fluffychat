@@ -22,14 +22,17 @@ Uint8List constantFrame(int amplitude, int sampleCount) {
 
 void main() {
   group('rmsDbfs', () {
-    test('digital silence reports the silence floor, not negative infinity', () {
-      // log(0) is -inf, which propagates through any comparison as a value
-      // that is neither above nor below a threshold in the way a caller
-      // expects. The floor is what keeps the detector's arithmetic total.
-      final level = rmsDbfs(constantFrame(0, 160));
-      expect(level, silenceDbfs);
-      expect(level.isFinite, isTrue);
-    });
+    test(
+      'digital silence reports the silence floor, not negative infinity',
+      () {
+        // log(0) is -inf, which propagates through any comparison as a value
+        // that is neither above nor below a threshold in the way a caller
+        // expects. The floor is what keeps the detector's arithmetic total.
+        final level = rmsDbfs(constantFrame(0, 160));
+        expect(level, silenceDbfs);
+        expect(level.isFinite, isTrue);
+      },
+    );
 
     test('an empty frame reports the silence floor', () {
       expect(rmsDbfs(Uint8List(0)), silenceDbfs);
@@ -58,8 +61,11 @@ void main() {
       backing.setRange(1, backing.length, constantFrame(16384, 160));
       final unaligned = Uint8List.sublistView(backing, 1);
 
-      expect(unaligned.offsetInBytes.isOdd, isTrue,
-          reason: 'the view is aligned, so this proves nothing');
+      expect(
+        unaligned.offsetInBytes.isOdd,
+        isTrue,
+        reason: 'the view is aligned, so this proves nothing',
+      );
       expect(rmsDbfs(unaligned), closeTo(-6.02, 0.01));
     });
 
@@ -75,7 +81,10 @@ void main() {
   group('frameDuration', () {
     test('160 samples at 16 kHz is 10 ms', () {
       expect(
-        frameDuration(constantFrame(0, 160), sampleRate: voiceSampleRateForTest),
+        frameDuration(
+          constantFrame(0, 160),
+          sampleRate: voiceSampleRateForTest,
+        ),
         const Duration(milliseconds: 10),
       );
     });
@@ -91,10 +100,10 @@ void main() {
   group('BargeInDetector', () {
     /// 10 ms per frame at 16 kHz, so a 200 ms sustain needs 20 of them.
     BargeInDetector detector() => BargeInDetector(
-          thresholdDbfs: -35.0,
-          sustain: const Duration(milliseconds: 200),
-          sampleRate: voiceSampleRateForTest,
-        );
+      thresholdDbfs: -35.0,
+      sustain: const Duration(milliseconds: 200),
+      sampleRate: voiceSampleRateForTest,
+    );
 
     final loud = constantFrame(16384, 160); // -6 dBFS, well above threshold
     final quiet = constantFrame(100, 160); // about -50 dBFS, below it
