@@ -20,10 +20,7 @@ void main() {
   const tallWidget = 500.0;
 
   Widget control(BuildContext context, bool expanded, VoidCallback toggle) =>
-      TextButton(
-        onPressed: toggle,
-        child: Text(expanded ? 'less' : 'more'),
-      );
+      TextButton(onPressed: toggle, child: Text(expanded ? 'less' : 'more'));
 
   /// Content whose height lives almost entirely in a widget span, the way a
   /// message with a code block does.

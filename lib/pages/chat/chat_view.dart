@@ -466,9 +466,8 @@ class ChatView extends StatelessWidget {
                                                       .freshConversationArmed)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets.only(
-                                                            top: 4,
-                                                            bottom: 4,
+                                                          const EdgeInsets.symmetric(
+                                                            vertical: 4,
                                                           ),
                                                       child: Text(
                                                         L10n.of(
