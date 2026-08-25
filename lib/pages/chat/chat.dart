@@ -539,7 +539,9 @@ class ChatController extends State<ChatPageWithRoom>
       // The once-per-visit guard stays for the other half of it: the timeline
       // reloads for all sorts of reasons (a decryption retry, a resync), and
       // every reload used to scroll up again.
-      if (readMarkerEventIndex > 1 && room.isUnread && !_didScrollToReadMarker) {
+      if (readMarkerEventIndex > 1 &&
+          room.isUnread &&
+          !_didScrollToReadMarker) {
         _didScrollToReadMarker = true;
         Logs().v('Scroll up to visible event', readMarkerEventId);
         scrollToEventId(readMarkerEventId, highlightEvent: false);

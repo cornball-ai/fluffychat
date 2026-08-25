@@ -43,6 +43,7 @@ analyzer:
     todo: ignore
   exclude:
     - lib/l10n/*.dart
+    - lib/utils/voice/proto/*.dart
     - build/**
     - android/**
     - ios/**

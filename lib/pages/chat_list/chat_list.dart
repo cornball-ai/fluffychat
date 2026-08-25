@@ -733,7 +733,8 @@ class ChatListController extends State<ChatList>
       case ChatContextAction.markUnread:
         await showFutureLoadingDialog(
           context: context,
-          future: () => room.showsAsUnread ? room.markRead() : room.markUnread(true),
+          future: () =>
+              room.showsAsUnread ? room.markRead() : room.markUnread(true),
         );
         return;
       case ChatContextAction.mute:
