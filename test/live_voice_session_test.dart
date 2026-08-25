@@ -167,6 +167,7 @@ class _Harness {
   final transcripts = <String>[];
   final replies = <String>[];
   final stored = <String>[];
+  final userTurns = <String>[];
   final ended = <Object?>[];
   late final LiveVoiceSession session;
 
@@ -183,6 +184,7 @@ class _Harness {
         onTranscript: transcripts.add,
         onReply: replies.add,
         onTurnStored: stored.add,
+        onUserTurn: userTurns.add,
         onEnded: ended.add,
       ),
     );
@@ -211,6 +213,9 @@ void main() {
       await harness.speak('hi there');
 
       expect(harness.transport.converseCalls, ['hi there']);
+      // The spoken turn is handed to the mount for posting, verbatim, the
+      // same text the agent receives.
+      expect(harness.userTurns, ['hi there']);
       // Segments cover the reply exactly, in order.
       expect(harness.transport.synthesizeCalls.join(), harness.replies.last);
       expect(harness.replies.last, 'Hello there. General Kenobi.');
@@ -247,6 +252,9 @@ void main() {
     harness.transport.emitStt(const SttTurnEnded());
     await pumpEventQueue();
     expect(harness.transport.converseCalls, ['hello world. ']);
+    // The posted turn obeys the same rule: stable text only, the leftover
+    // provisional discarded, never promoted into the room history.
+    expect(harness.userTurns, ['hello world. ']);
   });
 
   test(
@@ -341,6 +349,7 @@ void main() {
           onTranscript: (_) {},
           onReply: (_) {},
           onTurnStored: (_) {},
+          onUserTurn: (_) {},
           onEnded: ended.add,
         ),
       );
@@ -359,6 +368,8 @@ void main() {
     await harness.start();
     await harness.speak('   ');
     expect(harness.transport.converseCalls, isEmpty);
+    // One rule, both sinks: a turn too empty to send is too empty to post.
+    expect(harness.userTurns, isEmpty);
     expect(harness.transport.reports, isEmpty);
   });
 }

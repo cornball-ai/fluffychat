@@ -783,6 +783,18 @@ class ChatController extends State<ChatPageWithRoom>
           // The agent posts its stored reply into the room itself, so the
           // timeline is the durable rendering; nothing to do here yet.
           onTurnStored: (_) {},
+          // The user's spoken words, posted from their own account exactly
+          // as a typed message would be -- the agent authors its replies,
+          // the client authors the user, and nobody impersonates anybody.
+          // Fire-and-forget: posting is history bookkeeping, not part of
+          // the turn, and a failed post must not take the conversation
+          // down with it.
+          onUserTurn: (text) {
+            room.sendTextEvent(text).catchError((Object error) {
+              Logs().w('Live voice: failed to post spoken turn', error);
+              return null;
+            });
+          },
           onEnded: (error) {
             _liveVoice = null;
             liveVoiceTranscript.value = '';
