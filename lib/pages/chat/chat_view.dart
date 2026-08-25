@@ -230,7 +230,14 @@ class ChatView extends StatelessWidget {
                         icon: const Icon(Icons.call_outlined),
                         tooltip: L10n.of(context).placeCall,
                       ),
-                    ChatSettingsPopupMenu(controller.room, true),
+                    ChatSettingsPopupMenu(
+                      controller.room,
+                      true,
+                      onLiveVoice: controller.liveVoiceAvailable
+                          ? controller.toggleLiveVoice
+                          : null,
+                      liveVoiceActive: controller.liveVoiceActive,
+                    ),
                   ],
                 ],
                 bottom: PreferredSize(

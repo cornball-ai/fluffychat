@@ -32,6 +32,8 @@ import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/read_marker_target.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
+import 'package:fluffychat/utils/voice/live_voice_platform.dart';
+import 'package:fluffychat/utils/voice/live_voice_session.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -740,8 +742,91 @@ class ChatController extends State<ChatPageWithRoom>
         });
   }
 
+  // --- Live voice -----------------------------------------------------------
+
+  LiveVoiceSession? _liveVoice;
+
+  /// The user's transcript and the assistant's reply for the current live
+  /// voice turn, for whatever surface renders them. Kept as notifiers so the
+  /// session, which knows nothing about widgets, stays that way.
+  final ValueNotifier<String> liveVoiceTranscript = ValueNotifier('');
+  final ValueNotifier<String> liveVoiceReply = ValueNotifier('');
+
+  bool get liveVoiceActive => _liveVoice != null;
+
+  /// Flag on, platform capable, agent configured. The menu entry exists only
+  /// when all three hold, so the feature is invisible until someone asked
+  /// for it in settings.
+  bool get liveVoiceAvailable =>
+      AppSettings.experimentalLiveVoice.value &&
+      liveVoiceSupported &&
+      AppSettings.liveVoiceAgent.value.trim().isNotEmpty;
+
+  Future<void> toggleLiveVoice() async {
+    final active = _liveVoice;
+    if (active != null) {
+      await active.stop();
+      return;
+    }
+    final l10n = L10n.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    try {
+      final client = room.client;
+      final openId = await client.requestOpenIdToken(client.userID!, {});
+      final session = buildLiveVoiceSession(
+        agentAddress: AppSettings.liveVoiceAgent.value,
+        openIdToken: openId.accessToken,
+        matrixServerName: openId.matrixServerName,
+        callbacks: LiveVoiceCallbacks(
+          onTranscript: (text) => liveVoiceTranscript.value = text,
+          onReply: (text) => liveVoiceReply.value = text,
+          // The agent posts its stored reply into the room itself, so the
+          // timeline is the durable rendering; nothing to do here yet.
+          onTurnStored: (_) {},
+          onEnded: (error) {
+            _liveVoice = null;
+            liveVoiceTranscript.value = '';
+            liveVoiceReply.value = '';
+            if (mounted) setState(() {});
+            scaffoldMessenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  error == null
+                      ? l10n.liveVoiceEnded
+                      : '${l10n.liveVoiceEnded}: $error',
+                ),
+              ),
+            );
+          },
+        ),
+      );
+      _liveVoice = session;
+      setState(() {});
+      final started = await session.start(roomId);
+      if (!started) {
+        // Permission refused: the session never ran, so onEnded never fires.
+        _liveVoice = null;
+        if (mounted) setState(() {});
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text(l10n.liveVoiceEnded)),
+        );
+      }
+    } catch (error) {
+      _liveVoice = null;
+      if (mounted) setState(() {});
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('${l10n.liveVoiceEnded}: $error')),
+      );
+    }
+  }
+
+  // --------------------------------------------------------------------------
+
   @override
   void dispose() {
+    unawaited(_liveVoice?.stop());
+    liveVoiceTranscript.dispose();
+    liveVoiceReply.dispose();
     timeline?.cancelSubscriptions();
     timeline = null;
     _storeInputTimeoutTimer?.cancel();
