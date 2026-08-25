@@ -27,6 +27,18 @@ class LiveVoiceCallbacks {
   /// which is what belongs in the room history the UI shows.
   final void Function(String storedText) onTurnStored;
 
+  /// The user's completed turn, fired at the server's end-of-turn with the
+  /// stable transcript that is being sent to the agent.
+  ///
+  /// The mount posts this into the room as an ordinary message from the
+  /// user's own account -- the agent posts its replies itself, so without
+  /// this the history holds replies with no user turns between them, and the
+  /// client is the only party that can author the user's words without
+  /// impersonation. Fired only for turns that start a reply: silence the
+  /// endpointer resolved to nothing is skipped by the same rule that skips
+  /// sending it to the agent.
+  final void Function(String text) onUserTurn;
+
   /// The session ended. [error] is null for a caller-initiated stop and the
   /// cause for everything else -- the distinction pcm_capture's onEnded
   /// exists to preserve, carried through to the surface.
@@ -36,6 +48,7 @@ class LiveVoiceCallbacks {
     required this.onTranscript,
     required this.onReply,
     required this.onTurnStored,
+    required this.onUserTurn,
     required this.onEnded,
   });
 }
@@ -181,6 +194,12 @@ class LiveVoiceSession {
         final turnText = _stableTurn.toString();
         _stableTurn.clear();
         if (turnText.trim().isEmpty) return;
+        // Concurrent with the reply on purpose: posting is a room-history
+        // concern and must not sit on the turn's latency path. The ordering
+        // race against the agent's reply post is theoretical -- the agent
+        // posts at its generation end, hundreds of milliseconds after this
+        // local send at soonest.
+        _callbacks.onUserTurn(turnText);
         _startReply(turnText);
     }
   }
