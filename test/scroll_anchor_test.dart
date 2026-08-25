@@ -109,6 +109,77 @@ void main() {
     expect(position.pixels, before);
   });
 
+  testWidgets('the correction lands within one frame of the growth', (
+    tester,
+  ) async {
+    // The correction is measured after layout and applied from a post-frame
+    // callback, so it takes effect on the frame after the one that grew. That
+    // is the whole budget: pumping a single frame has to be enough. Settling
+    // instead would hide a correction that arrived late.
+    final boxKey = GlobalKey();
+    await tester.pumpWidget(harness(reverse: true, boxKey: boxKey));
+    await tester.pumpAndSettle();
+
+    tester.state<ScrollableState>(find.byType(Scrollable)).position.jumpTo(250);
+    await tester.pumpAndSettle();
+
+    final topBefore = tester.getTopLeft(find.byKey(boxKey)).dy;
+    await tester.tap(find.text('grow'));
+    await tester.pump(); // the frame that grows
+    await tester.pump(); // the frame the correction lands on
+
+    expect(
+      tester.getTopLeft(find.byKey(boxKey)).dy,
+      moreOrLessEquals(topBefore, epsilon: 1.0),
+      reason: 'the correction had not arrived one frame after the growth',
+    );
+  });
+
+  testWidgets('an easing height defeats the correction, which is why the '
+      'collapsible message does not animate', (tester) async {
+    // Executable reasoning rather than a guard. Wrapping the growth in an
+    // AnimatedSize is the shape that shipped broken: the height eases over
+    // ~300ms, so one correction sized from the final height moves the viewport
+    // by the whole growth immediately, into space the list has not made yet.
+    //
+    // Chasing it frame by frame does not rescue it either -- the correction
+    // always trails its own measurement by a frame, so the lag that is
+    // invisible once repeats for the length of the animation.
+    //
+    // Settling first and checking the end state sees none of this: the end
+    // state is correct either way. That is exactly why the original test
+    // passed while the feature was broken on a real phone.
+    const duration = Duration(milliseconds: 300);
+    final sizeKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: viewport,
+            child: _AnimatedHarness(sizeKey: sizeKey, duration: duration),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    tester.state<ScrollableState>(find.byType(Scrollable)).position.jumpTo(250);
+    await tester.pumpAndSettle();
+
+    final topBefore = tester.getTopLeft(find.byKey(sizeKey)).dy;
+    await tester.tap(find.text('grow'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      (tester.getTopLeft(find.byKey(sizeKey)).dy - topBefore).abs(),
+      greaterThan(10.0),
+      reason:
+          'an animated height no longer breaks the anchor -- if that is '
+          'genuinely true now, the message widget can animate again',
+    );
+  });
+
   group('heightOf', () {
     testWidgets('measures a laid-out box', (tester) async {
       final key = GlobalKey();
@@ -185,6 +256,75 @@ class _GrowableItemState extends State<_GrowableItem> {
         SizedBox(
           key: widget.boxKey,
           height: _grown ? _grownHeight : _itemHeight,
+        ),
+        TextButton(onPressed: _grow, child: const Text('grow')),
+      ],
+    );
+  }
+}
+
+/// The same reversed list, but with the growing box wrapped in an AnimatedSize
+/// the way the real collapsible message is. The key goes on the AnimatedSize,
+/// because its height is what occupies space in the list while its child has
+/// already jumped to the final value.
+class _AnimatedHarness extends StatelessWidget {
+  final GlobalKey sizeKey;
+  final Duration duration;
+
+  const _AnimatedHarness({required this.sizeKey, required this.duration});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      reverse: true,
+      itemCount: 12,
+      itemBuilder: (context, index) => index == _growableIndex
+          ? _AnimatedGrowItem(sizeKey: sizeKey, duration: duration)
+          : SizedBox(height: _itemHeight, child: Text('item $index')),
+    );
+  }
+}
+
+class _AnimatedGrowItem extends StatefulWidget {
+  final GlobalKey sizeKey;
+  final Duration duration;
+
+  const _AnimatedGrowItem({required this.sizeKey, required this.duration});
+
+  @override
+  State<_AnimatedGrowItem> createState() => _AnimatedGrowItemState();
+}
+
+class _AnimatedGrowItemState extends State<_AnimatedGrowItem> {
+  bool _grown = false;
+
+  /// The same measure/grow/anchor sequence the message used to run, kept so
+  /// the animated case can be demonstrated rather than described.
+  void _grow() {
+    final before = heightOf(widget.sizeKey);
+    setState(() => _grown = true);
+    if (before == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final after = heightOf(widget.sizeKey);
+      if (after == null) return;
+      anchorTopEdge(context: context, heightBefore: before, heightAfter: after);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedSize(
+          key: widget.sizeKey,
+          duration: widget.duration,
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 100,
+            height: _grown ? _grownHeight : _itemHeight,
+          ),
         ),
         TextButton(onPressed: _grow, child: const Text('grow')),
       ],

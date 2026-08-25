@@ -8,9 +8,9 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/events/collapsible_content.dart';
 import 'package:fluffychat/utils/code_highlight_theme.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
-import 'package:fluffychat/utils/scroll_anchor.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -373,9 +373,12 @@ class HtmlMessage extends StatelessWidget {
               padding: isInline
                   ? const EdgeInsets.symmetric(horizontal: 4.0)
                   : const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: Text.rich(
-                TextSpan(children: [_renderCodeBlockNode(element)]),
-                selectionColor: hightlightTextColor.withAlpha(128),
+              child: _CodeBody(
+                isInline: isInline,
+                child: Text.rich(
+                  TextSpan(children: [_renderCodeBlockNode(element)]),
+                  selectionColor: hightlightTextColor.withAlpha(128),
+                ),
               ),
             ),
           ),
@@ -587,116 +590,82 @@ class HtmlMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final element = parser.parse(html).body ?? dom.Element.html('');
     final configuredMaxLines = AppSettings.messagePreviewMaxLines.value;
-    final maxLines = configuredMaxLines <= 0 ? null : configuredMaxLines;
     final span = _renderHtml(element, context);
     final style = TextStyle(fontSize: fontSize, color: textColor);
-
-    if (maxLines == null) {
-      return Text.rich(
-        span,
-        style: style,
-        selectionColor: textColor.withAlpha(128),
-      );
-    }
-
-    // Heuristic: if plain text has enough newlines or length, it will overflow.
-    final plainText = element.text;
-    final lineCount = '\n'.allMatches(plainText).length + 1;
-    final likelyOverflows =
-        lineCount > maxLines || plainText.length > maxLines * 50;
-
-    if (!likelyOverflows) {
-      return Text.rich(
-        span,
-        style: style,
-        selectionColor: textColor.withAlpha(128),
-      );
-    }
-
-    return _CollapsibleText(
-      span: span,
+    final text = Text.rich(
+      span,
       style: style,
-      maxLines: maxLines,
-      textColor: textColor,
-      linkColor: linkStyle.color ?? textColor,
-      fontSize: fontSize,
+      selectionColor: textColor.withAlpha(128),
+    );
+
+    if (configuredMaxLines <= 0) return text;
+
+    // The cap is a height, not a line count, because most of what needs
+    // collapsing is not text: code blocks, blockquotes, lists and tables all
+    // render as widget spans, and `Text.maxLines` does not constrain those at
+    // all. The setting still reads as "about this many lines" -- it is
+    // converted through the measured height of one line in this style.
+    //
+    // Whether there is anything hidden is measured rather than guessed. The
+    // old heuristic counted characters and newlines in the plain text, which
+    // says nothing about the height of an embedded widget.
+    return CollapsibleContent(
+      collapsedHeight: configuredMaxLines * _lineHeightOf(style),
+      duration: FluffyThemes.animationDuration,
+      curve: FluffyThemes.animationCurve,
+      controlBuilder: (context, expanded, toggle) {
+        final l10n = L10n.of(context);
+        return Center(
+          child: TextButton.icon(
+            onPressed: toggle,
+            style: TextButton.styleFrom(
+              foregroundColor: linkStyle.color ?? textColor,
+            ),
+            icon: Icon(expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down),
+            label: Text(expanded ? l10n.showLess : l10n.showMore),
+          ),
+        );
+      },
+      child: text,
     );
   }
 }
 
-class _CollapsibleText extends StatefulWidget {
-  final InlineSpan span;
-  final TextStyle style;
-  final int maxLines;
-  final Color textColor;
-  final Color linkColor;
-  final double fontSize;
+/// A block of code scrolls sideways; inline code does not.
+///
+/// Code is not prose. Wrapping a long line pushes its remainder onto the next
+/// row, which shifts every line below it out of alignment and turns a comment
+/// or a string into something that reads as structure. Giving the block
+/// unbounded width instead lets long lines run off the edge, where they can be
+/// scrolled to, and leaves the indentation meaning what it says.
+///
+/// Inline code sits inside a sentence and has to wrap with it.
+class _CodeBody extends StatelessWidget {
+  final bool isInline;
+  final Widget child;
 
-  const _CollapsibleText({
-    required this.span,
-    required this.style,
-    required this.maxLines,
-    required this.textColor,
-    required this.linkColor,
-    required this.fontSize,
-  });
-
-  @override
-  State<_CollapsibleText> createState() => _CollapsibleTextState();
-}
-
-class _CollapsibleTextState extends State<_CollapsibleText> {
-  bool _expanded = false;
-
-  /// On the Text.rich rather than the AnimatedSize: AnimatedSize's own height
-  /// is still mid-animation on the frame after the toggle, while its child is
-  /// laid out at the final height straight away. Measuring the parent would
-  /// read a height that has not happened yet and under-correct.
-  final GlobalKey _textKey = GlobalKey();
-
-  void _toggle() {
-    final before = heightOf(_textKey);
-    setState(() => _expanded = !_expanded);
-    if (before == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final after = heightOf(_textKey);
-      if (after == null) return;
-      anchorTopEdge(context: context, heightBefore: before, heightAfter: after);
-    });
-  }
+  const _CodeBody({required this.isInline, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final l10n = L10n.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedSize(
-          duration: FluffyThemes.animationDuration,
-          curve: FluffyThemes.animationCurve,
-          alignment: Alignment.topLeft,
-          child: Text.rich(
-            widget.span,
-            key: _textKey,
-            style: widget.style,
-            maxLines: _expanded ? null : widget.maxLines,
-            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            selectionColor: widget.textColor.withAlpha(128),
-          ),
-        ),
-        Center(
-          child: TextButton.icon(
-            onPressed: _toggle,
-            style: TextButton.styleFrom(foregroundColor: widget.linkColor),
-            icon: Icon(_expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down),
-            label: Text(_expanded ? l10n.showLess : l10n.showMore),
-          ),
-        ),
-      ],
+    if (isInline) return child;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: child,
     );
   }
+}
+
+/// Height of a single line in [style], so a line-count setting can become the
+/// pixel cap that actually bounds mixed content.
+double _lineHeightOf(TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: 'M', style: style),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  final height = painter.height;
+  painter.dispose();
+  return height;
 }
 
 class MatrixPill extends StatelessWidget {

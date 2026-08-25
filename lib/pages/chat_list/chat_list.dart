@@ -13,6 +13,7 @@ import 'package:fluffychat/pages/chat_list/chat_list_view.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
+import 'package:fluffychat/utils/matrix_sdk_extensions/room_read_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
@@ -558,14 +559,18 @@ class ChatListController extends State<ChatList>
             child: Row(
               mainAxisSize: .min,
               children: [
+                // Offer "mark as read" whenever the room is showing as unread
+                // by any measure, not only when it was manually marked. A room
+                // left unread by actual messages is the case you most want the
+                // action for, and it used to be the one case it was missing.
                 Icon(
-                  room.markedUnread
+                  room.showsAsUnread
                       ? Icons.mark_as_unread
                       : Icons.mark_as_unread_outlined,
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  room.markedUnread
+                  room.showsAsUnread
                       ? L10n.of(context).markAsRead
                       : L10n.of(context).markAsUnread,
                 ),
@@ -728,7 +733,8 @@ class ChatListController extends State<ChatList>
       case ChatContextAction.markUnread:
         await showFutureLoadingDialog(
           context: context,
-          future: () => room.markUnread(!room.markedUnread),
+          future: () =>
+              room.showsAsUnread ? room.markRead() : room.markUnread(true),
         );
         return;
       case ChatContextAction.mute:

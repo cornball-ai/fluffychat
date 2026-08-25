@@ -26,9 +26,7 @@ void main() {
     List<String> getSuggestions(TextEditingValue value) {
       final match = RegExp(r'(?:\s|^)@([-\w]*)$').firstMatch(value.text);
       if (match == null) return const [];
-      return options
-          .where((o) => o.contains(match[1]!.toLowerCase()))
-          .toList();
+      return options.where((o) => o.contains(match[1]!.toLowerCase())).toList();
     }
 
     await tester.pumpWidget(
@@ -42,22 +40,21 @@ void main() {
                 optionsBuilder: getSuggestions,
                 displayStringForOption: (o) => '@$o ',
                 fieldViewBuilder:
-                    (context, controller, focusNode, onFieldSubmitted) =>
-                        Focus(
-                          onKeyEvent: (node, event) {
-                            if (event is! KeyUpEvent &&
-                                event.logicalKey == LogicalKeyboardKey.tab &&
-                                getSuggestions(controller.value).isNotEmpty) {
-                              onFieldSubmitted();
-                              return KeyEventResult.handled;
-                            }
-                            return KeyEventResult.ignored;
-                          },
-                          child: TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                          ),
-                        ),
+                    (context, controller, focusNode, onFieldSubmitted) => Focus(
+                      onKeyEvent: (node, event) {
+                        if (event is! KeyUpEvent &&
+                            event.logicalKey == LogicalKeyboardKey.tab &&
+                            getSuggestions(controller.value).isNotEmpty) {
+                          onFieldSubmitted();
+                          return KeyEventResult.handled;
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                      ),
+                    ),
               ),
               const TextButton(onPressed: null, child: Text('after')),
             ],
