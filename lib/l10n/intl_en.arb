@@ -2840,5 +2840,10 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "allow": "Allow",
+    "deny": "Deny",
+    "startLiveVoice": "Start live voice (experimental)",
+    "stopLiveVoice": "Stop live voice",
+    "liveVoiceEnded": "Live voice ended"
 }

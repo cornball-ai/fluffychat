@@ -14,13 +14,25 @@ import 'package:matrix/matrix.dart';
 
 import 'matrix.dart';
 
-enum ChatPopupMenuActions { details, encryption, leave, search }
+enum ChatPopupMenuActions { details, encryption, leave, search, liveVoice }
 
 class ChatSettingsPopupMenu extends StatefulWidget {
   final Room room;
   final bool displayChatDetails;
 
-  const ChatSettingsPopupMenu(this.room, this.displayChatDetails, {super.key});
+  /// Toggles a live voice conversation in this room. Null hides the entry --
+  /// the feature is flag-gated and native-only, and the caller is the one
+  /// who knows.
+  final VoidCallback? onLiveVoice;
+  final bool liveVoiceActive;
+
+  const ChatSettingsPopupMenu(
+    this.room,
+    this.displayChatDetails, {
+    this.onLiveVoice,
+    this.liveVoiceActive = false,
+    super.key,
+  });
 
   @override
   ChatSettingsPopupMenuState createState() => ChatSettingsPopupMenuState();
@@ -85,6 +97,9 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
               case ChatPopupMenuActions.encryption:
                 context.go('/rooms/${widget.room.id}/encryption');
                 break;
+              case ChatPopupMenuActions.liveVoice:
+                widget.onLiveVoice?.call();
+                break;
             }
           },
           itemBuilder: (BuildContext context) => [
@@ -96,6 +111,25 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
                     const Icon(Icons.info_outline_rounded),
                     const SizedBox(width: 12),
                     Text(L10n.of(context).chatDetails),
+                  ],
+                ),
+              ),
+            if (widget.onLiveVoice != null)
+              PopupMenuItem<ChatPopupMenuActions>(
+                value: ChatPopupMenuActions.liveVoice,
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.liveVoiceActive
+                          ? Icons.mic_off_outlined
+                          : Icons.mic_outlined,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      widget.liveVoiceActive
+                          ? L10n.of(context).stopLiveVoice
+                          : L10n.of(context).startLiveVoice,
+                    ),
                   ],
                 ),
               ),

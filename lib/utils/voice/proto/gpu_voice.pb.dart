@@ -368,9 +368,21 @@ class Transcript extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearText() => $_clearField(1);
 
-  /// True once this text will not be revised. A provisional transcript
-  /// REPLACES the previous provisional one rather than appending to it, so a
-  /// client renders the last provisional it saw, not the concatenation.
+  /// True once this text will not be revised. The two kinds accumulate
+  /// differently, and the asymmetry is the contract:
+  ///
+  ///   STABLE transcripts APPEND. The turn's text so far is the concatenation
+  ///   of every stable text in arrival order, exactly as sent -- the server
+  ///   includes any joining whitespace, the client inserts nothing.
+  ///   PROVISIONAL transcripts REPLACE. Each one supersedes the previous
+  ///   provisional in full; it is the not-yet-committed tail after all stable
+  ///   text, so a client renders stable-concatenation + last provisional.
+  ///
+  /// A stable event never restates text from an earlier stable event, and once
+  /// any part of a provisional is committed it arrives again as stable (the
+  /// provisional it came from is dead). Without this pinned, one end appends
+  /// stables while the other treats each as the full turn, and the divergence
+  /// is invisible until a turn has two sentences.
   @$pb.TagNumber(2)
   $core.bool get stable => $_getBF(1);
   @$pb.TagNumber(2)
@@ -387,6 +399,11 @@ class Transcript extends $pb.GeneratedMessage {
 /// detector, but that decides "stop the speaker now", which is a different
 /// question from "the human's turn is over" and cannot answer it. A pause for
 /// breath and the end of a sentence look identical to an energy threshold.
+/// Before emitting this, the server MUST flush everything it will commit as a
+/// final stable Transcript: after SpeechEnded, the turn's text is the stable
+/// concatenation, full stop, and any provisional still on screen is discarded
+/// rather than promoted. A client must never have to guess whether trailing
+/// provisional text "counts".
 class SpeechEnded extends $pb.GeneratedMessage {
   factory SpeechEnded({
     $fixnum.Int64? audioOffsetMs,

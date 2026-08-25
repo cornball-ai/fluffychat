@@ -260,7 +260,14 @@ class ChatView extends StatelessWidget {
                         icon: Icon(Icons.call_outlined),
                         onPressed: controller.startOrJoinVideoCall,
                       ),
-                    ChatSettingsPopupMenu(controller.room, true),
+                    ChatSettingsPopupMenu(
+                      controller.room,
+                      true,
+                      onLiveVoice: controller.liveVoiceAvailable
+                          ? controller.toggleLiveVoice
+                          : null,
+                      liveVoiceActive: controller.liveVoiceActive,
+                    ),
                   ],
                 ],
                 bottom: PreferredSize(
