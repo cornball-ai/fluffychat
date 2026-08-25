@@ -187,7 +187,9 @@ class AllocateVoiceResponse extends $pb.GeneratedMessage {
   void clearToken() => $_clearField(4);
 
   /// Absolute expiry, not a duration, so a client with a slow start does not
-  /// measure the TTL from the wrong instant.
+  /// measure the TTL from the wrong instant. Ends the whole session, not just
+  /// the media token: after this instant the agent refuses the session_id and
+  /// the bearer pairing that authorises Converse and ReportTurn (see AUTH).
   @$pb.TagNumber(5)
   $fixnum.Int64 get expiresAtUnixMs => $_getI64(4);
   @$pb.TagNumber(5)

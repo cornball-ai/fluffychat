@@ -26,12 +26,34 @@
 // is missing rather than guessing a host -- verifying against a guessed
 // server is how a token that would never verify appears to.
 //
+// THE SUB MUST BELONG TO THE SERVER THAT ANSWERED. The server name is
+// caller-controlled, and a server is authoritative only for its own users --
+// so the agent rejects the verification unless the domain of the returned
+// `sub` equals the server name it queried. Skip that comparison and a
+// hostile homeserver answers userinfo with someone else's user id and
+// inherits that victim's room memberships. The spec requires this check;
+// it is the entire difference between "a server vouched for its user" and
+// "a server named a user".
+//
 // Verification yields an identity; it does not authorise anything by itself.
 // The agent must separately check that the verified user is a member of
 // room_id before minting -- room_id in the request is scoping, not
 // authentication, and OpenID proves who is asking, not that they belong
-// where they are asking to be. The agent may cache a successful verification
-// for the token's lifetime rather than round-tripping per call.
+// where they are asking to be.
+//
+// VERIFICATION HAPPENS EXACTLY ONCE PER SESSION, at AllocateVoice. The agent
+// has no way to know the OpenID token's lifetime (userinfo returns only the
+// sub; expires_in went to the client), so "cache until the token expires" is
+// not implementable and is not the model. Instead the minted session is bound
+// to the pair (verified identity, bearer bytes as presented): Converse and
+// ReportTurn carry the same two metadata entries, and the agent authorises
+// them by matching the bearer against the session's stored one
+// (constant-time), no federation round trip. Same bytes, same identity, until
+// expires_at_unix_ms ends the session. A caller presenting someone else's
+// session_id fails the bearer match; a different valid token from the same
+// user, or from another member of the room, is PERMISSION_DENIED all the
+// same -- a session belongs to the credential that opened it, not to the
+// user, and not to the room.
 //
 // This schema predates any implementation. Until a server ships, breaking
 // changes -- renames, renumbers, semantics -- are free and preferred over
@@ -81,7 +103,9 @@ message AllocateVoiceResponse {
   string token = 4;
 
   // Absolute expiry, not a duration, so a client with a slow start does not
-  // measure the TTL from the wrong instant.
+  // measure the TTL from the wrong instant. Ends the whole session, not just
+  // the media token: after this instant the agent refuses the session_id and
+  // the bearer pairing that authorises Converse and ReportTurn (see AUTH).
   int64 expires_at_unix_ms = 5;
 }
 
