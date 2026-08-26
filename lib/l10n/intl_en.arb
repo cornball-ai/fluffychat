@@ -2801,6 +2801,7 @@
     "liveVoiceAgentAddressBody": "host:port of the voice agent. Prefix with tls:// for TLS. Leave empty to hide live voice.",
     "muteMicrophone": "Mute microphone",
     "unmuteMicrophone": "Unmute microphone",
+    "messageEmptied": "Message removed",
     "voiceModeListening": "Listening…",
     "voiceModeSpeaking": "Speaking…",
     "voiceModeMuted": "Muted"

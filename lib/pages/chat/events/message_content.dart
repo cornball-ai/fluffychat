@@ -175,6 +175,27 @@ class MessageContent extends StatelessWidget {
                 fontSize: fontSize,
               );
             }
+            // An edit can empty a message -- an agent retracting words its
+            // listener never heard, a bot with no redaction API -- and the
+            // SDK's body getter turns an empty body into 'Unknown message
+            // format ...', which reads as a client bug. An intentionally
+            // emptied message renders as an intentional removal.
+            if (event.text.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Text(
+                  L10n.of(context).messageEmptied,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontStyle: FontStyle.italic,
+                    color: textColor.withValues(alpha: 0.6),
+                  ),
+                ),
+              );
+            }
             var html = AppSettings.renderHtml.value && event.isRichMessage
                 ? event.formattedText
                 : event.body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
