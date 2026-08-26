@@ -2794,5 +2794,14 @@
     "deny": "Deny",
     "startLiveVoice": "Start live voice (experimental)",
     "stopLiveVoice": "Stop live voice",
-    "liveVoiceEnded": "Live voice ended"
+    "liveVoiceEnded": "Live voice ended",
+    "liveVoice": "Live voice",
+    "enableLiveVoice": "Enable live voice (experimental)",
+    "liveVoiceAgentAddress": "Voice agent address",
+    "liveVoiceAgentAddressBody": "host:port of the voice agent. Prefix with tls:// for TLS. Leave empty to hide live voice.",
+    "muteMicrophone": "Mute microphone",
+    "unmuteMicrophone": "Unmute microphone",
+    "voiceModeListening": "Listening…",
+    "voiceModeSpeaking": "Speaking…",
+    "voiceModeMuted": "Muted"
 }
