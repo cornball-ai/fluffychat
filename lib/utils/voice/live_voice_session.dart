@@ -60,15 +60,26 @@ class LiveVoiceCallbacks {
 /// client is the orchestrator: barge-in is "cancel the streams I hold", and
 /// nobody else holds them.
 ///
-/// The turn loop: mic frames go to the transcription stream always, even
-/// while a reply plays (the capture config's echo cancellation is what makes
-/// that safe). Stable transcripts accumulate; the server's SttTurnEnded
-/// sends the accumulated turn to the agent. Reply deltas stream to the UI
-/// and through the segmenter into per-segment synthesis; chunks play through
-/// the sink while ChunkPlayback keeps the heard count and the ledger keeps
-/// the offset frame. The user speaking over the reply cancels generation,
-/// synthesis and playback, settles what was heard, and reports it -- in that
-/// order, so nothing said after the cut can smear the accounting.
+/// The turn loop: while no reply is playing, mic frames flow to the
+/// transcription stream. While one IS playing, the mic is half-duplex:
+/// frames feed only the barge-in detector, and reach transcription again
+/// after a confirmed interruption cuts the reply. The first design sent
+/// frames always, trusting the capture config's echo cancellation -- which
+/// turned out to be a request no platform honored, so the microphone heard
+/// our own synthesis at levels below the barge-in threshold but well above
+/// the server VAD's, the reply came back transcribed as a user turn, and
+/// the agent held a conversation with itself. Gating on the detector keeps
+/// quiet echo out while real interruptions still cut through; the frames
+/// the detector consumes while deciding are the price, and the endpointer
+/// picks the speaker up from the cut.
+///
+/// Stable transcripts accumulate; the server's SttTurnEnded sends the
+/// accumulated turn to the agent. Reply deltas stream to the UI and through
+/// the segmenter into per-segment synthesis; chunks play through the sink
+/// while ChunkPlayback keeps the heard count and the ledger keeps the
+/// offset frame. The user speaking over the reply cancels generation,
+/// synthesis and playback, settles what was heard, and reports it -- in
+/// that order, so nothing said after the cut can smear the accounting.
 class LiveVoiceSession {
   final VoiceTransport _transport;
   final PcmCapture _capture;
@@ -187,10 +198,16 @@ class LiveVoiceSession {
 
   void _onMicFrame(Uint8List frame) {
     if (!_running || _stopping || _muted) return;
-    _transport.sendAudio(frame);
-    if (_reply != null && _bargeIn.addFrame(frame)) {
-      unawaited(_cutReply(TurnResult.bargeIn));
+    if (_reply != null) {
+      // Half-duplex while the reply plays: see the class comment. The
+      // frame that confirms the interruption is itself dropped -- the cut
+      // it triggers is what reopens the path for the frames after it.
+      if (_bargeIn.addFrame(frame)) {
+        unawaited(_cutReply(TurnResult.bargeIn));
+      }
+      return;
     }
+    _transport.sendAudio(frame);
   }
 
   void _onSttEvent(SttEvent event) {
