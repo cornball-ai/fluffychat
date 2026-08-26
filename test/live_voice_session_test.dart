@@ -321,12 +321,19 @@ void main() {
     expect(harness.transport.reports, isEmpty);
     expect(harness.session.replying, isTrue);
 
-    // Unmuting restores both paths with the same frame.
+    // Unmuting restores the path: the reply is still playing, so the frame
+    // goes to the detector (not the wire) and the trigger cuts the reply.
     harness.session.muted = false;
     harness.recorder.frames.add(Uint8List(320));
     await pumpEventQueue();
-    expect(harness.transport.sentFrames, hasLength(2));
     expect(harness.transport.reports.single.result, TurnResult.bargeIn);
+    expect(harness.transport.sentFrames, hasLength(1));
+
+    // And with the reply gone, frames reach transcription again.
+    harness.bargeIn.trigger = false;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(2));
   });
 
   test('stop() mid-reply reports abandoned and ends cleanly', () async {
@@ -346,13 +353,33 @@ void main() {
   });
 
   test(
-    'mic frames keep flowing to transcription while a reply plays',
+    'mic frames are gated while a reply plays; the cut reopens them',
     () async {
+      // The first design sent frames to transcription during playback and
+      // trusted echo cancellation. No platform honored it: the mic heard
+      // the synthesis under the barge-in threshold but over the server
+      // VAD's, and the agent conversed with itself. This pins the gate.
       final harness = _Harness(sinkFractions: [0.2]);
       harness.transport.replyDeltas = ['A reply that keeps playing.'];
       await harness.start();
       await harness.speak('hi');
 
+      // Quiet room noise (or our own speaker) during the reply: dropped.
+      harness.recorder.frames.add(Uint8List(320));
+      await pumpEventQueue();
+      expect(harness.transport.sentFrames, isEmpty);
+      expect(harness.session.replying, isTrue);
+
+      // Confirmed interruption energy: cuts the reply. The confirming
+      // frame itself is dropped -- the cut is what reopens the path.
+      harness.bargeIn.trigger = true;
+      harness.recorder.frames.add(Uint8List(320));
+      await pumpEventQueue();
+      expect(harness.transport.reports.single.result, TurnResult.bargeIn);
+      expect(harness.transport.sentFrames, isEmpty);
+
+      // With the reply dead, frames flow to transcription again.
+      harness.bargeIn.trigger = false;
       harness.recorder.frames.add(Uint8List(320));
       await pumpEventQueue();
       expect(harness.transport.sentFrames, hasLength(1));
