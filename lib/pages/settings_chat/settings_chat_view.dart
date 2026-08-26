@@ -9,6 +9,7 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
 import 'package:go_router/go_router.dart';
@@ -170,6 +171,42 @@ class SettingsChatView extends StatelessWidget {
                   padding: EdgeInsets.all(16.0),
                   child: Icon(Icons.chevron_right_outlined),
                 ),
+              ),
+              Divider(color: theme.dividerColor),
+              ListTile(
+                title: Text(
+                  L10n.of(context).liveVoice,
+                  style: TextStyle(
+                    color: theme.colorScheme.secondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              SettingsSwitchListTile.adaptive(
+                title: L10n.of(context).enableLiveVoice,
+                setting: AppSettings.experimentalLiveVoice,
+              ),
+              ListTile(
+                title: Text(L10n.of(context).liveVoiceAgentAddress),
+                subtitle: Text(
+                  AppSettings.liveVoiceAgent.value.trim().isEmpty
+                      ? L10n.of(context).liveVoiceAgentAddressBody
+                      : AppSettings.liveVoiceAgent.value,
+                ),
+                onTap: () async {
+                  final input = await showTextInputDialog(
+                    useRootNavigator: false,
+                    context: context,
+                    title: L10n.of(context).liveVoiceAgentAddress,
+                    message: L10n.of(context).liveVoiceAgentAddressBody,
+                    okLabel: L10n.of(context).ok,
+                    cancelLabel: L10n.of(context).cancel,
+                    initialText: AppSettings.liveVoiceAgent.value,
+                  );
+                  if (input == null) return;
+                  await AppSettings.liveVoiceAgent.setItem(input.trim());
+                  controller.updateState();
+                },
               ),
             ],
           ),

@@ -107,6 +107,23 @@ class LiveVoiceSession {
   /// on the microphone is interpreted as barge-in.
   bool get replying => _reply != null;
 
+  bool _muted = false;
+
+  bool get muted => _muted;
+
+  /// While muted, microphone frames are dropped before they reach the wire
+  /// or the barge-in detector: the server hears nothing, a playing reply
+  /// cannot be interrupted by room noise, and the endpointer's audio clock
+  /// simply pauses. The capture itself keeps running so unmuting is
+  /// instant -- no device reopen, no permission re-prompt.
+  set muted(bool value) {
+    if (_muted == value) return;
+    _muted = value;
+    // The detector's energy window would otherwise straddle the gap and
+    // read stale pre-mute audio against fresh speech.
+    if (!value) _bargeIn.reset();
+  }
+
   Future<bool> start(String roomId) async {
     if (_running) return true;
     await _transport.connect(roomId);
@@ -169,7 +186,7 @@ class LiveVoiceSession {
   }
 
   void _onMicFrame(Uint8List frame) {
-    if (!_running || _stopping) return;
+    if (!_running || _stopping || _muted) return;
     _transport.sendAudio(frame);
     if (_reply != null && _bargeIn.addFrame(frame)) {
       unawaited(_cutReply(TurnResult.bargeIn));

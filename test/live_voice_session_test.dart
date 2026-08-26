@@ -299,6 +299,36 @@ void main() {
     expect(report.textHeard, 0);
   });
 
+  test('muted frames reach neither the wire nor barge-in', () async {
+    // The one chunk hangs at 40%, holding the reply open so barge-in stays
+    // meaningful for the whole test.
+    final harness = _Harness(sinkFractions: [0.4]);
+    harness.transport.replyDeltas = ['One single sentence here.'];
+    await harness.start();
+
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(1));
+
+    await harness.speak('hi');
+    harness.session.muted = true;
+    // A trigger-happy detector plus a playing reply: the frame is dropped
+    // before the detector sees it, so nothing is cut and nothing is sent.
+    harness.bargeIn.trigger = true;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(1));
+    expect(harness.transport.reports, isEmpty);
+    expect(harness.session.replying, isTrue);
+
+    // Unmuting restores both paths with the same frame.
+    harness.session.muted = false;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(2));
+    expect(harness.transport.reports.single.result, TurnResult.bargeIn);
+  });
+
   test('stop() mid-reply reports abandoned and ends cleanly', () async {
     final harness = _Harness(sinkFractions: [1.0, 0.3]);
     harness.transport.replyDeltas = ['First bit. ', 'Second bit.'];
