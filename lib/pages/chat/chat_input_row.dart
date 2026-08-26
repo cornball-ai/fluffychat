@@ -8,6 +8,7 @@ import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/recording_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
+import 'package:fluffychat/pages/chat/voice_mode_screen.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -371,6 +372,25 @@ class ChatInputRow extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (controller.liveVoiceAvailable)
+                    AnimatedContainer(
+                      duration: FluffyThemes.animationDuration,
+                      curve: FluffyThemes.animationCurve,
+                      width: textMessageOnly ? 0 : 48,
+                      height: height,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(),
+                      clipBehavior: Clip.hardEdge,
+                      child: IconButton(
+                        tooltip: L10n.of(context).startLiveVoice,
+                        onPressed: controller.toggleLiveVoice,
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
+                        ),
+                        icon: const VoiceBarsIcon(),
+                      ),
+                    ),
                   Container(
                     height: height,
                     width: height,

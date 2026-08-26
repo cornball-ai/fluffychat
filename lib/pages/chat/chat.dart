@@ -21,6 +21,7 @@ import 'package:fluffychat/pages/chat/events/message_actions.dart';
 import 'package:fluffychat/pages/chat/start_poll_bottom_sheet.dart';
 import 'package:fluffychat/pages/chat/trust_user_key_dialog.dart';
 import 'package:fluffychat/pages/chat/utils/web_file_to_x_file.dart';
+import 'package:fluffychat/pages/chat/voice_mode_screen.dart';
 import 'package:fluffychat/pages/chat_details/chat_details.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
@@ -752,6 +753,25 @@ class ChatController extends State<ChatPageWithRoom>
   final ValueNotifier<String> liveVoiceTranscript = ValueNotifier('');
   final ValueNotifier<String> liveVoiceReply = ValueNotifier('');
 
+  /// Session lifecycle for the voice-mode screen: flips true when a session
+  /// starts and false however it ends, which is the screen's one signal to
+  /// dismiss itself -- user stop, session error, and room dispose all
+  /// converge here instead of each needing its own navigation path.
+  final ValueNotifier<bool> liveVoiceRunning = ValueNotifier(false);
+
+  /// True from the first reply delta until the turn is stored: the window in
+  /// which the orb pulses and barge-in is meaningful.
+  final ValueNotifier<bool> liveVoiceSpeaking = ValueNotifier(false);
+
+  final ValueNotifier<bool> liveVoiceMuted = ValueNotifier(false);
+
+  void toggleLiveVoiceMute() {
+    final session = _liveVoice;
+    if (session == null) return;
+    session.muted = !session.muted;
+    liveVoiceMuted.value = session.muted;
+  }
+
   bool get liveVoiceActive => _liveVoice != null;
 
   /// Flag on, platform capable, agent configured. The menu entry exists only
@@ -779,10 +799,16 @@ class ChatController extends State<ChatPageWithRoom>
         matrixServerName: openId.matrixServerName,
         callbacks: LiveVoiceCallbacks(
           onTranscript: (text) => liveVoiceTranscript.value = text,
-          onReply: (text) => liveVoiceReply.value = text,
+          onReply: (text) {
+            liveVoiceReply.value = text;
+            liveVoiceSpeaking.value = true;
+          },
           // The agent posts its stored reply into the room itself, so the
-          // timeline is the durable rendering; nothing to do here yet.
-          onTurnStored: (_) {},
+          // timeline is the durable rendering; the local surface only needs
+          // to know the speaking window closed.
+          onTurnStored: (_) {
+            liveVoiceSpeaking.value = false;
+          },
           // The user's spoken words, posted from their own account exactly
           // as a typed message would be -- the agent authors its replies,
           // the client authors the user, and nobody impersonates anybody.
@@ -797,18 +823,24 @@ class ChatController extends State<ChatPageWithRoom>
           },
           onEnded: (error) {
             _liveVoice = null;
-            liveVoiceTranscript.value = '';
-            liveVoiceReply.value = '';
-            if (mounted) setState(() {});
-            scaffoldMessenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                  error == null
-                      ? l10n.liveVoiceEnded
-                      : '${l10n.liveVoiceEnded}: $error',
-                ),
-              ),
-            );
+            // Guarded because dispose() stops the session asynchronously and
+            // then disposes these notifiers -- by the time a stop() from
+            // there lands here, touching them would throw.
+            if (mounted) {
+              liveVoiceTranscript.value = '';
+              liveVoiceReply.value = '';
+              liveVoiceSpeaking.value = false;
+              liveVoiceMuted.value = false;
+              liveVoiceRunning.value = false;
+              setState(() {});
+            }
+            // A clean stop needs no announcement -- the voice screen just
+            // closed under the user's own finger. An error is worth one.
+            if (error != null) {
+              scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text('${l10n.liveVoiceEnded}: $error')),
+              );
+            }
           },
         ),
       );
@@ -821,6 +853,17 @@ class ChatController extends State<ChatPageWithRoom>
         if (mounted) setState(() {});
         scaffoldMessenger.showSnackBar(
           SnackBar(content: Text(l10n.liveVoiceEnded)),
+        );
+        return;
+      }
+      liveVoiceRunning.value = true;
+      if (mounted) {
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => VoiceModeScreen(controller: this),
+            ),
+          ),
         );
       }
     } catch (error) {
@@ -839,6 +882,9 @@ class ChatController extends State<ChatPageWithRoom>
     unawaited(_liveVoice?.stop());
     liveVoiceTranscript.dispose();
     liveVoiceReply.dispose();
+    liveVoiceRunning.dispose();
+    liveVoiceSpeaking.dispose();
+    liveVoiceMuted.dispose();
     timeline?.cancelSubscriptions();
     timeline = null;
     _storeInputTimeoutTimer?.cancel();
