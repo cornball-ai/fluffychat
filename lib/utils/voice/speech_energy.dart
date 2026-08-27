@@ -98,13 +98,31 @@ class BargeInDetector {
   /// chase the very speech burst it exists to detect.
   final double emaAlpha;
 
+  /// How long after [audioStarted] the detector learns instead of judging:
+  /// frames update the floor fast and cannot fire.
+  ///
+  /// This window exists because the floor otherwise spends the silent
+  /// generation seconds learning silence, and the speaker's own onset then
+  /// trips the trigger before the floor has ever met the bleed -- measured
+  /// live as a cut at level -19.9 dBFS against a floor still sitting at
+  /// its -44 seed. Nobody genuinely interrupts within the first syllable;
+  /// the bleed is all these frames can teach.
+  final Duration primeFor;
+
+  /// Fast learning rate used inside the priming window.
+  final double primeAlpha;
+
   BargeInDetector({
     this.thresholdDbfs = -35.0,
     this.sustain = const Duration(milliseconds: 200),
     this.sampleRate = 16000,
     this.snrMarginDb = 9.0,
     this.emaAlpha = 0.05,
+    this.primeFor = const Duration(milliseconds: 300),
+    this.primeAlpha = 0.5,
   });
+
+  Duration _primeLeft = Duration.zero;
 
   Duration _aboveFor = Duration.zero;
   Duration _triggeredAfter = Duration.zero;
@@ -155,15 +173,35 @@ class BargeInDetector {
   /// Feeds one frame. Returns true on the frame where the sustain window is
   /// satisfied, and only that frame -- the count restarts afterwards, so a
   /// caller that keeps feeding does not get a repeat every frame.
+  /// Playback is starting a chunk: learn before judging. Called at every
+  /// chunk start, not just the first -- the floor decays toward silence
+  /// across inter-chunk gaps (generation runs behind real time on small
+  /// cards), and each chunk's onset would otherwise reopen the hole this
+  /// window closes.
+  void audioStarted() {
+    _primeLeft = primeFor;
+    _aboveFor = Duration.zero;
+  }
+
   bool addFrame(Uint8List frame) {
     final level = _lastLevel = rmsDbfs(frame);
-    final effective = effectiveThresholdDbfs;
-    // The floor updates on every frame, sub-threshold or not: steady
-    // speaker bleed is exactly the signal it exists to absorb. Seeded so
-    // the first frames behave like the fixed threshold alone.
     final floor = _floorDbfs ?? (thresholdDbfs - snrMarginDb);
-    _floorDbfs = floor + emaAlpha * (level - floor);
+    if (_primeLeft > Duration.zero) {
+      // Priming: this frame is the speaker's own onset by presumption.
+      // It teaches the floor and cannot fire.
+      _primeLeft -= frameDuration(frame, sampleRate: sampleRate);
+      _floorDbfs = floor + primeAlpha * (level - floor);
+      _aboveFor = Duration.zero;
+      return false;
+    }
+    final effective = effectiveThresholdDbfs;
     if (level < effective) {
+      // Only sub-threshold frames teach the floor: steady speaker bleed is
+      // exactly the signal it exists to absorb, while a voice loud enough
+      // to count toward a fire must not raise its own bar mid-sustain --
+      // with both at similar time constants, the floor would chase the
+      // interruption and the trigger could never complete.
+      _floorDbfs = floor + emaAlpha * (level - floor);
       _aboveFor = Duration.zero;
       return false;
     }
@@ -189,5 +227,6 @@ class BargeInDetector {
     // The floor belongs to one reply's acoustic situation; the next reply
     // re-learns it from scratch rather than inheriting a stale one.
     _floorDbfs = null;
+    _primeLeft = Duration.zero;
   }
 }

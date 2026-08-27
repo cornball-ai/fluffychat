@@ -286,6 +286,10 @@ class LiveVoiceSession {
           },
           onStored: _callbacks.onTurnStored,
           onError: _fail,
+          // Every chunk onset re-primes the detector: the frames while a
+          // chunk starts are the speaker's own voice arriving at the mic,
+          // and they teach the noise floor instead of firing it.
+          onChunkPlaybackStart: _bargeIn.audioStarted,
         );
         _reply = reply;
         _bargeIn.reset();
@@ -323,6 +327,7 @@ class _ReplyTurn {
   final void Function(String) onReplyText;
   final void Function(String) onStored;
   final void Function(Object) onError;
+  final void Function() onChunkPlaybackStart;
 
   _ReplyTurn({
     required this.transport,
@@ -331,6 +336,7 @@ class _ReplyTurn {
     required this.onReplyText,
     required this.onStored,
     required this.onError,
+    required this.onChunkPlaybackStart,
   });
 
   final HeardOffsetLedger _ledger = HeardOffsetLedger();
@@ -462,6 +468,7 @@ class _ReplyTurn {
     _playQueue = _playQueue.then((_) async {
       if (_cut) return;
       _chunkOffsets.add((segmentIndex, inputTextEnd));
+      onChunkPlaybackStart();
       _playback.startChunk(index, duration);
       final played = await sink.play(
         pcm,

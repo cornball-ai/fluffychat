@@ -32,10 +32,14 @@ class _FakeRecorder extends Fake implements AudioRecorder {
 /// own tests, and the session only cares about the bool.
 class _ScriptedBargeIn extends BargeInDetector {
   bool trigger = false;
+  int audioStarts = 0;
   @override
   bool addFrame(Uint8List frame) => trigger;
   @override
   void reset() {}
+
+  @override
+  void audioStarted() => audioStarts++;
 }
 
 /// Sink scripted per chunk: how far playback got, as a fraction. A fraction
@@ -225,6 +229,9 @@ void main() {
       expect(report.textHeard, 'Hello there. General Kenobi.'.runes.length);
       expect(harness.stored, ['stored']);
       expect(harness.ended, isEmpty);
+      // Every chunk's playback start re-primed the detector, so the noise
+      // floor meets each onset before the trigger can.
+      expect(harness.bargeIn.audioStarts, harness.sink.playedChunks.length);
     },
   );
 
