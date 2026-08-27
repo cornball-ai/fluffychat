@@ -35,7 +35,14 @@ class ErrorReporter {
     StackTrace? stackTrace,
   ]) => WidgetsBinding.instance.addPostFrameCallback((_) {
     if (AppSettings.autoSendErrorReports.value == false) {
-      debugPrint('Exception caught but auto send error reports is disabled.');
+      // Declining to REPORT an error is not consent to hide it from the
+      // local log: this line was once the only witness to a failing voice
+      // session, and it named nothing.
+      Logs().e(
+        'Uncaught error (reporting disabled)',
+        error,
+        stackTrace ?? StackTrace.current,
+      );
       return;
     }
     final context =
