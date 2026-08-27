@@ -80,16 +80,37 @@ class BargeInDetector {
   /// elapsed time.
   final int sampleRate;
 
+  /// How far above the adaptive noise floor a frame must sit to count as
+  /// someone talking over the reply.
+  ///
+  /// The floor exists because during playback the microphone always hears
+  /// SOME of our own speaker output, and on a laptop the speakers sit next
+  /// to the mic -- a fixed threshold either cuts the reply on its own
+  /// audio or goes deaf to the user, depending on volume. Steady bleed
+  /// raises the floor (tracked as a slow exponential moving average); a
+  /// human talking over it is a sustained jump ABOVE that floor. Speech
+  /// over speech at conversational distance runs 10 dB or more hot, so the
+  /// default margin sits just under that.
+  final double snrMarginDb;
+
+  /// Smoothing factor for the noise-floor average, per frame. Small on
+  /// purpose: the floor should follow the reply's overall loudness, not
+  /// chase the very speech burst it exists to detect.
+  final double emaAlpha;
+
   BargeInDetector({
     this.thresholdDbfs = -35.0,
     this.sustain = const Duration(milliseconds: 200),
     this.sampleRate = 16000,
+    this.snrMarginDb = 9.0,
+    this.emaAlpha = 0.05,
   });
 
   Duration _aboveFor = Duration.zero;
   Duration _triggeredAfter = Duration.zero;
   double _triggerLevel = silenceDbfs;
   double _lastLevel = silenceDbfs;
+  double? _floorDbfs;
 
   /// Level of the most recent frame, for meters and for diagnosing a threshold
   /// that turns out to be wrong on real hardware.
@@ -120,12 +141,29 @@ class BargeInDetector {
   /// [triggeredAfter].
   double get triggerLevel => _triggerLevel;
 
+  /// The current adaptive noise floor, for the same diagnostic purpose as
+  /// [triggerLevel]: a cut whose level barely clears a high floor reads
+  /// differently from one towering over a quiet room.
+  double get floorDbfs => _floorDbfs ?? (thresholdDbfs - snrMarginDb);
+
+  /// The level a frame must reach right now to count toward a fire: the
+  /// fixed threshold, or the adaptive floor plus margin, whichever is
+  /// higher.
+  double get effectiveThresholdDbfs =>
+      max(thresholdDbfs, floorDbfs + snrMarginDb);
+
   /// Feeds one frame. Returns true on the frame where the sustain window is
   /// satisfied, and only that frame -- the count restarts afterwards, so a
   /// caller that keeps feeding does not get a repeat every frame.
   bool addFrame(Uint8List frame) {
     final level = _lastLevel = rmsDbfs(frame);
-    if (level < thresholdDbfs) {
+    final effective = effectiveThresholdDbfs;
+    // The floor updates on every frame, sub-threshold or not: steady
+    // speaker bleed is exactly the signal it exists to absorb. Seeded so
+    // the first frames behave like the fixed threshold alone.
+    final floor = _floorDbfs ?? (thresholdDbfs - snrMarginDb);
+    _floorDbfs = floor + emaAlpha * (level - floor);
+    if (level < effective) {
       _aboveFor = Duration.zero;
       return false;
     }
@@ -148,5 +186,8 @@ class BargeInDetector {
   void reset() {
     _aboveFor = Duration.zero;
     _lastLevel = silenceDbfs;
+    // The floor belongs to one reply's acoustic situation; the next reply
+    // re-learns it from scratch rather than inheriting a stale one.
+    _floorDbfs = null;
   }
 }

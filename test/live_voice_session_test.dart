@@ -420,6 +420,41 @@ void main() {
     },
   );
 
+  test(
+    'a transcribed copy of our own reply is discarded, not answered',
+    () async {
+      // The chunk hangs at 40% so the reply is still playing when the echo
+      // arrives -- the exact live failure: speaker output transcribed and
+      // answered as if the user said it.
+      final harness = _Harness(sinkFractions: [0.4, 1.0, 1.0]);
+      harness.transport.replyDeltas = ['You are a bold one my friend.'];
+      await harness.start();
+      await harness.speak('hi there you');
+
+      // The speaker's own words come back through the microphone.
+      harness.transport.emitStt(
+        const SttTranscript('you are a bold one', stable: true),
+      );
+      harness.transport.emitStt(const SttTurnEnded());
+      await pumpEventQueue();
+
+      // Discarded entirely: not posted, not answered, and the playing reply
+      // survives.
+      expect(harness.userTurns, ['hi there you']);
+      expect(harness.transport.converseCalls, hasLength(1));
+      expect(harness.session.replying, isTrue);
+
+      // A genuine interruption with its own words still cuts through.
+      harness.transport.emitStt(
+        const SttTranscript('stop please what time is it', stable: true),
+      );
+      harness.transport.emitStt(const SttTurnEnded());
+      await pumpEventQueue();
+      expect(harness.userTurns, hasLength(2));
+      expect(harness.transport.converseCalls, hasLength(2));
+    },
+  );
+
   test('an empty turn (silence resolved to nothing) starts no reply', () async {
     final harness = _Harness();
     await harness.start();

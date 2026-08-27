@@ -5,10 +5,13 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:matrix/matrix.dart' show Logs;
+
 import 'chunk_playback.dart';
 import 'heard_offset_ledger.dart';
 import 'pcm_capture.dart';
 import 'pcm_sink.dart';
+import 'self_echo_filter.dart';
 import 'speech_energy.dart';
 import 'tts_segmenter.dart';
 import 'voice_transport.dart';
@@ -95,12 +98,16 @@ class LiveVoiceSession {
     required LiveVoiceCallbacks callbacks,
     BargeInDetector? bargeIn,
     TtsSegmenter Function()? segmenterFactory,
+    SelfEchoFilter? echoFilter,
   }) : _transport = transport,
        _capture = capture,
        _sink = sink,
        _callbacks = callbacks,
        _bargeIn = bargeIn ?? BargeInDetector(),
+       _echoFilter = echoFilter ?? SelfEchoFilter(),
        _newSegmenter = segmenterFactory ?? TtsSegmenter.new;
+
+  final SelfEchoFilter _echoFilter;
 
   StreamSubscription<SttEvent>? _sttSubscription;
   bool _running = false;
@@ -174,6 +181,7 @@ class LiveVoiceSession {
 
   void _fail(Object error) {
     if (!_running || _stopping) return;
+    Logs().w('Live voice: session failed', error);
     _stopping = true;
     // Best-effort: the truncation report matters, failures during a teardown
     // that is already dying do not.
@@ -203,6 +211,15 @@ class LiveVoiceSession {
       // frame that confirms the interruption is itself dropped -- the cut
       // it triggers is what reopens the path for the frames after it.
       if (_bargeIn.addFrame(frame)) {
+        // The numbers name which failure this was: a user talking over
+        // the reply towers over the floor, our own speaker bleed barely
+        // clears it, and a threshold set wrong looks like neither.
+        Logs().i(
+          'Live voice: energy barge-in cut the reply '
+          '(level ${_bargeIn.triggerLevel.toStringAsFixed(1)} dBFS, '
+          'floor ${_bargeIn.floorDbfs.toStringAsFixed(1)} dBFS, '
+          'sustained ${_bargeIn.triggeredAfter.inMilliseconds} ms)',
+        );
         unawaited(_cutReply(TurnResult.bargeIn));
       }
       return;
@@ -228,6 +245,17 @@ class LiveVoiceSession {
         final turnText = _stableTurn.toString();
         _stableTurn.clear();
         if (turnText.trim().isEmpty) return;
+        // Our own speech, transcribed off the speaker: without this, the
+        // bot's reply posts as the user's words and the agent answers
+        // itself. Discarded entirely -- not posted, not sent.
+        if (_echoFilter.isSelfEcho(turnText)) {
+          Logs().i(
+            'Live voice: discarded self-echo turn '
+            '("${turnText.length > 60 ? '${turnText.substring(0, 60)}…' : turnText}")',
+          );
+          _callbacks.onTranscript('');
+          return;
+        }
         // Concurrent with the reply on purpose: posting is a room-history
         // concern and must not sit on the turn's latency path. The ordering
         // race against the agent's reply post is theoretical -- the agent
@@ -242,6 +270,9 @@ class LiveVoiceSession {
     // A new user turn while the previous reply still plays is itself a
     // barge-in, even when energy detection missed it -- soft speech the
     // endpointing model still resolved.
+    if (_reply != null) {
+      Logs().i('Live voice: new user turn cut the pending reply');
+    }
     unawaited(
       _cutReply(TurnResult.bargeIn).then((_) {
         if (_stopping) return;
@@ -249,7 +280,10 @@ class LiveVoiceSession {
           transport: _transport,
           sink: _sink,
           segmenter: _newSegmenter(),
-          onReplyText: _callbacks.onReply,
+          onReplyText: (text) {
+            _echoFilter.replyText(text);
+            _callbacks.onReply(text);
+          },
           onStored: _callbacks.onTurnStored,
           onError: _fail,
         );
@@ -257,7 +291,10 @@ class LiveVoiceSession {
         _bargeIn.reset();
         unawaited(
           reply.run(userText).then((_) {
-            if (identical(_reply, reply)) _reply = null;
+            if (identical(_reply, reply)) {
+              _reply = null;
+              _echoFilter.replyEnded();
+            }
           }),
         );
       }),
@@ -269,6 +306,9 @@ class LiveVoiceSession {
     if (reply == null) return;
     _reply = null;
     await reply.cut(result);
+    // The cut reply's words stay in the air (and the capture pipeline)
+    // for a moment; the filter keeps them as an echo source.
+    _echoFilter.replyEnded();
   }
 }
 
