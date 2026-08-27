@@ -24,6 +24,7 @@ import 'package:universal_html/universal_html.dart' as web;
 
 import 'config/setting_keys.dart';
 import 'utils/background_push.dart';
+import 'utils/tray_service.dart';
 import 'widgets/fluffy_chat_app.dart';
 
 ReceivePort? mainIsolateReceivePort;
@@ -72,6 +73,10 @@ void main(List<String> args) => runZonedGuarded(() async {
   // To make sure that the parts of flutter needed are started up already, we need to ensure that the
   // widget bindings are initialized already.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Desktop Linux gets a tray icon and close-to-tray. No-op elsewhere,
+  // and non-fatal if the system has no indicator support.
+  await TrayService.init();
 
   final store = await AppSettings.init();
   Logs().i('Welcome to ${AppSettings.applicationName.value} <3');
