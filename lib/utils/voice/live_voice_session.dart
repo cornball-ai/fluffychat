@@ -63,8 +63,7 @@ class LiveVoiceCallbacks {
 /// client is the orchestrator: barge-in is "cancel the streams I hold", and
 /// nobody else holds them.
 ///
-/// The turn loop: mic frames flow to the transcription stream at all
-/// times, and WHAT COMES BACK AS WORDS decides whether the user
+/// The turn loop: WHAT COMES BACK AS WORDS decides whether the user
 /// interrupted. A turn whose text is substantially the reply we are
 /// currently speaking is our own voice arriving back through the
 /// microphone and is discarded; a turn that says something else is a real
@@ -80,13 +79,21 @@ class LiveVoiceCallbacks {
 /// Every version cut the reply mid-word with nobody speaking. Words are
 /// the one signal that carries the answer: we know what we just said.
 ///
-/// The costs are honest ones. Interruption latency becomes the
+/// Energy keeps one job, and it is not deciding: while a reply plays the
+/// wire stays closed until sustained input opens it, holding the last
+/// half second so the syllable that opened it still arrives. That is for
+/// the ENDPOINTER's benefit. Streaming bleed continuously gives the
+/// server's voice-activity model no pause to find, so it never declares
+/// a turn over, and a cut that only happens at turn end never happens --
+/// which is exactly how full duplex broke interruption while fixing
+/// self-interruption. A gate that is wrong costs a little wasted
+/// transcription; a gate that decides costs the reply.
+///
+/// The remaining cost is honest: interruption latency is the
 /// endpointer's rather than 200 ms of energy, so a few more words play
-/// before the reply stops. Transcription hears our own speech, which is
-/// noise on the wire. Both are worth paying for a conversation that does
-/// not interrupt itself, and both shrink to nothing the day real echo
-/// cancellation exists under the capture path -- at which point energy
-/// barge-in can come back as the fast path it was meant to be.
+/// before the reply stops. It shrinks the day real echo cancellation
+/// exists under the capture path -- at which point energy barge-in can
+/// come back as the fast path it was meant to be.
 ///
 /// Stable transcripts accumulate; the server's SttTurnEnded sends the
 /// accumulated turn to the agent. Reply deltas stream to the UI and through
@@ -120,6 +127,19 @@ class LiveVoiceSession {
        _newSegmenter = segmenterFactory ?? TtsSegmenter.new;
 
   final SelfEchoFilter _echoFilter;
+
+  /// Whether mic frames are currently reaching transcription during a
+  /// reply. Closed when a reply starts, opened by the first loud input.
+  bool _wireOpen = false;
+
+  /// Frames held back while the wire is closed, flushed the moment it
+  /// opens so the syllable that opened it is not the syllable lost.
+  final List<Uint8List> _prebuffer = [];
+  int _prebufferedBytes = 0;
+
+  /// About half a second at 16 kHz mono 16-bit: enough to carry the onset
+  /// the detector needed to make up its mind, not enough to matter.
+  static const int _prebufferMaxBytes = voiceSampleRate * 2 ~/ 2;
 
   StreamSubscription<SttEvent>? _sttSubscription;
   bool _running = false;
@@ -218,19 +238,38 @@ class LiveVoiceSession {
 
   void _onMicFrame(Uint8List frame) {
     if (!_running || _stopping || _muted) return;
-    // Full duplex: frames flow to transcription whether or not a reply is
-    // playing. WHAT was said decides an interruption now, not how loud it
-    // was -- see the class comment. The detector still runs, but only to
-    // put numbers in the log.
-    if (_reply != null && _bargeIn.addFrame(frame)) {
+    if (_reply != null && !_wireOpen) {
+      // Hold the wire closed until something is worth transcribing. This
+      // is about the ENDPOINTER, not about interruption: streaming our
+      // own speaker bleed continuously gives the server's voice-activity
+      // model no pause to find, so it never declares a turn over, and a
+      // cut that only happens at turn end never happens at all. Silence
+      // withheld here is silence it can endpoint against.
+      _prebuffer.add(frame);
+      _prebufferedBytes += frame.lengthInBytes;
+      while (_prebufferedBytes > _prebufferMaxBytes && _prebuffer.length > 1) {
+        _prebufferedBytes -= _prebuffer.removeAt(0).lengthInBytes;
+      }
+      if (!_bargeIn.addFrame(frame)) return;
       Logs().d(
-        'Live voice: loud input during playback '
+        'Live voice: opening the wire mid-reply '
         '(level ${_bargeIn.triggerLevel.toStringAsFixed(1)} dBFS, '
         'floor ${_bargeIn.floorDbfs.toStringAsFixed(1)} dBFS) -- '
         'the transcript decides whether it interrupts',
       );
+      _wireOpen = true;
+      for (final held in _prebuffer) {
+        _transport.sendAudio(held);
+      }
+      _clearPrebuffer();
+      return;
     }
     _transport.sendAudio(frame);
+  }
+
+  void _clearPrebuffer() {
+    _prebuffer.clear();
+    _prebufferedBytes = 0;
   }
 
   void _onSttEvent(SttEvent event) {
@@ -299,6 +338,10 @@ class LiveVoiceSession {
         );
         _reply = reply;
         _bargeIn.reset();
+        // A new reply closes the wire again: its own audio must not be
+        // what keeps the endpointer from ever finding a pause.
+        _wireOpen = false;
+        _clearPrebuffer();
         unawaited(
           reply.run(userText).then((_) {
             if (identical(_reply, reply)) {

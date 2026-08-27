@@ -357,24 +357,37 @@ void main() {
     expect(harness.sink.disposed, isTrue);
   });
 
-  test('loud input during playback cuts nothing by itself', () async {
+  test('loud input opens the wire mid-reply but cuts nothing', () async {
     // Three energy-threshold designs each cut the reply on its own first
-    // syllable, with nobody speaking. Loudness now decides nothing: the
-    // detector may fire all it likes, and only words interrupt.
+    // syllable, with nobody speaking. Loudness now decides nothing about
+    // interruption; it only decides what is worth transcribing.
     final harness = _Harness(sinkFractions: [0.2]);
     harness.transport.replyDeltas = ['A reply that keeps playing.'];
     await harness.start();
     await harness.speak('hi');
 
+    // Quiet frames are held back, so the endpointer gets the pause it
+    // needs instead of a continuous wall of our own bleed.
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, isEmpty);
+
+    // Sustained input opens the wire, and the held frames go with it --
+    // the syllable that opened the gate is not the syllable lost.
     harness.bargeIn.trigger = true;
     harness.recorder.frames.add(Uint8List(320));
     await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(2));
 
+    // Nothing was cut: only words do that.
     expect(harness.transport.reports, isEmpty);
     expect(harness.session.replying, isTrue);
-    // And frames reach transcription throughout: full duplex is what
-    // lets the words arrive to be judged at all.
-    expect(harness.transport.sentFrames, hasLength(1));
+
+    // Once open, it stays open for the rest of the reply.
+    harness.bargeIn.trigger = false;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(3));
   });
 
   test(
