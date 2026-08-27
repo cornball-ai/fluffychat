@@ -94,6 +94,7 @@ dependencies:
   slugify: ^2.0.0
   sqflite_common_ffi: ^2.4.3
   swipe_to_action: ^0.3.0
+  tray_manager: ^0.5.3
   unifiedpush: ^6.2.0
   unifiedpush_ui: ^0.2.0
   universal_html: ^2.3.0
@@ -101,6 +102,7 @@ dependencies:
   uuid: ^4.6.0
   video_player: ^2.14.0
   wakelock_plus: ^1.8.0
+  window_manager: ^0.5.2
 
 dev_dependencies:
   dart_code_linter: ^4.4.0
