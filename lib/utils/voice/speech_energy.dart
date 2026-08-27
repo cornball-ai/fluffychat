@@ -93,36 +93,38 @@ class BargeInDetector {
   /// default margin sits just under that.
   final double snrMarginDb;
 
-  /// Smoothing factor for the noise-floor average, per frame. Small on
-  /// purpose: the floor should follow the reply's overall loudness, not
-  /// chase the very speech burst it exists to detect.
-  final double emaAlpha;
-
-  /// How long after [audioStarted] the detector learns instead of judging:
-  /// frames update the floor fast and cannot fire.
+  /// Time constant of the noise-floor average.
   ///
-  /// This window exists because the floor otherwise spends the silent
-  /// generation seconds learning silence, and the speaker's own onset then
-  /// trips the trigger before the floor has ever met the bleed -- measured
-  /// live as a cut at level -19.9 dBFS against a floor still sitting at
-  /// its -44 seed. Nobody genuinely interrupts within the first syllable;
-  /// the bleed is all these frames can teach.
-  final Duration primeFor;
+  /// A TIME constant, not a per-frame weight: capture frame size is a
+  /// platform decision and explicitly not constant, so a per-frame alpha
+  /// silently retunes the whole detector when a device hands over 100 ms
+  /// frames instead of 10 ms ones.
+  final Duration floorTimeConstant;
 
-  /// Fast learning rate used inside the priming window.
-  final double primeAlpha;
+  /// How far above the floor input must sit for [strongInput] -- the
+  /// margin at which a caller may act on loudness alone.
+  ///
+  /// Well clear of [snrMarginDb], because acting is expensive and the
+  /// margin is what separates "something is there" from "somebody is
+  /// talking". Only meaningful when the floor itself says the residual
+  /// echo is negligible, which [floorIsQuiet] answers.
+  final double strongMarginDb;
+
+  /// Floor below which residual echo is treated as negligible: working
+  /// acoustic echo cancellation drops the between-words level into the
+  /// -60s or quieter, where bleed no longer masquerades as a person.
+  /// Without AEC the floor sits in the -40s and this stays false.
+  final double quietFloorDbfs;
 
   BargeInDetector({
     this.thresholdDbfs = -35.0,
     this.sustain = const Duration(milliseconds: 200),
     this.sampleRate = 16000,
     this.snrMarginDb = 9.0,
-    this.emaAlpha = 0.05,
-    this.primeFor = const Duration(milliseconds: 300),
-    this.primeAlpha = 0.5,
+    this.floorTimeConstant = const Duration(milliseconds: 500),
+    this.strongMarginDb = 20.0,
+    this.quietFloorDbfs = -58.0,
   });
-
-  Duration _primeLeft = Duration.zero;
 
   Duration _aboveFor = Duration.zero;
   Duration _triggeredAfter = Duration.zero;
@@ -173,27 +175,19 @@ class BargeInDetector {
   /// Feeds one frame. Returns true on the frame where the sustain window is
   /// satisfied, and only that frame -- the count restarts afterwards, so a
   /// caller that keeps feeding does not get a repeat every frame.
-  /// Playback is starting a chunk: learn before judging. Called at every
-  /// chunk start, not just the first -- the floor decays toward silence
-  /// across inter-chunk gaps (generation runs behind real time on small
-  /// cards), and each chunk's onset would otherwise reopen the hole this
-  /// window closes.
-  void audioStarted() {
-    _primeLeft = primeFor;
-    _aboveFor = Duration.zero;
-  }
+  /// Whether the floor says residual echo is negligible right now -- in
+  /// practice, whether acoustic echo cancellation is doing its job.
+  bool get floorIsQuiet => floorDbfs <= quietFloorDbfs;
+
+  /// Whether the input that caused the most recent fire towered over the
+  /// floor by [strongMarginDb]. A caller may treat this as a person
+  /// talking, but only while [floorIsQuiet] -- otherwise our own speaker
+  /// clears any margin you care to name.
+  bool get strongInput => _triggerLevel - floorDbfs >= strongMarginDb;
 
   bool addFrame(Uint8List frame) {
     final level = _lastLevel = rmsDbfs(frame);
     final floor = _floorDbfs ?? (thresholdDbfs - snrMarginDb);
-    if (_primeLeft > Duration.zero) {
-      // Priming: this frame is the speaker's own onset by presumption.
-      // It teaches the floor and cannot fire.
-      _primeLeft -= frameDuration(frame, sampleRate: sampleRate);
-      _floorDbfs = floor + primeAlpha * (level - floor);
-      _aboveFor = Duration.zero;
-      return false;
-    }
     final effective = effectiveThresholdDbfs;
     if (level < effective) {
       // Only sub-threshold frames teach the floor: steady speaker bleed is
@@ -201,7 +195,15 @@ class BargeInDetector {
       // to count toward a fire must not raise its own bar mid-sustain --
       // with both at similar time constants, the floor would chase the
       // interruption and the trigger could never complete.
-      _floorDbfs = floor + emaAlpha * (level - floor);
+      //
+      // Blind priming at playback onset used to live here too, and had to
+      // go: with echo cancellation working, a user who speaks as a chunk
+      // begins IS the input, and teaching the floor their voice is how a
+      // real interruption gets locked out of its own conversation.
+      final dt = frameDuration(frame, sampleRate: sampleRate);
+      final tau = floorTimeConstant.inMicroseconds;
+      final alpha = tau <= 0 ? 1.0 : 1 - exp(-dt.inMicroseconds / tau);
+      _floorDbfs = floor + alpha * (level - floor);
       _aboveFor = Duration.zero;
       return false;
     }
@@ -227,6 +229,5 @@ class BargeInDetector {
     // The floor belongs to one reply's acoustic situation; the next reply
     // re-learns it from scratch rather than inheriting a stale one.
     _floorDbfs = null;
-    _primeLeft = Duration.zero;
   }
 }
