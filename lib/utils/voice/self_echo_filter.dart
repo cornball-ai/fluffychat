@@ -31,6 +31,11 @@ class SelfEchoFilter {
   /// almost nothing.
   final double matchFractionWhileSpeaking;
 
+  /// How many of our words repeated back to back, in our order, count as
+  /// a verbatim run -- the second fingerprint of echo, for transcripts
+  /// too mangled to clear the ratio on their own.
+  final int verbatimRunWords;
+
   /// Turns shorter than this many words are never filtered: "yes" or
   /// "exactly" will usually appear somewhere in a long reply, and a short
   /// genuine answer wrongly discarded is worse than a short echo fragment
@@ -49,7 +54,8 @@ class SelfEchoFilter {
 
   SelfEchoFilter({
     this.matchFraction = 0.7,
-    this.matchFractionWhileSpeaking = 0.45,
+    this.matchFractionWhileSpeaking = 0.65,
+    this.verbatimRunWords = 4,
     this.minWords = 3,
     this.tailWindow = const Duration(seconds: 30),
     DateTime Function()? clock,
@@ -59,9 +65,14 @@ class SelfEchoFilter {
   String _previousReply = '';
   DateTime? _previousEndedAt;
 
-  /// Replace the in-progress reply text. Called with the accumulated text
-  /// on every delta, so passing the full text so far is correct.
-  void replyText(String text) {
+  /// Replace the text that has actually been AUDIBLE so far.
+  ///
+  /// Audible, not generated: a reply arrives from the model far ahead of
+  /// the speaker, and text the microphone has had no chance to hear
+  /// cannot be echoing back. Matching against the whole generated reply
+  /// makes a user's question about what comes next look like our own
+  /// voice.
+  void audibleText(String text) {
     _currentReply = text;
   }
 
@@ -83,27 +94,71 @@ class SelfEchoFilter {
   bool isSelfEcho(String turnText, {bool speaking = false}) {
     final turnWords = _words(turnText);
     if (turnWords.length < minWords) return false;
-    final reference = <String, int>{};
-    for (final word in _words(_currentReply)) {
-      reference[word] = (reference[word] ?? 0) + 1;
-    }
-    final endedAt = _previousEndedAt;
-    if (endedAt != null && _clock().difference(endedAt) <= tailWindow) {
-      for (final word in _words(_previousReply)) {
-        reference[word] = (reference[word] ?? 0) + 1;
-      }
-    }
+    final reference = <String>[
+      ..._words(_previousReply.isEmpty ? '' : _tailIfFresh()),
+      ..._words(_currentReply),
+    ];
     if (reference.isEmpty) return false;
-    var matched = 0;
-    for (final word in turnWords) {
-      final remaining = reference[word];
-      if (remaining != null && remaining > 0) {
-        reference[word] = remaining - 1;
-        matched++;
-      }
-    }
+    final ratio = _orderedMatch(turnWords, reference) / turnWords.length;
     final bar = speaking ? matchFractionWhileSpeaking : matchFraction;
-    return matched / turnWords.length >= bar;
+    if (ratio >= bar) return true;
+    // A verbatim run is the other fingerprint of echo. Transcription of
+    // our own speech reproduces whole phrases intact even when it mangles
+    // words around them ("a rough one last night" survived "asterisk 5
+    // bend forward"), while a person reusing our vocabulary rarely
+    // repeats four of our words back to back in our order.
+    return speaking &&
+        ratio >= matchFractionWhileSpeaking &&
+        _longestRun(turnWords, reference) >= verbatimRunWords;
+  }
+
+  /// Longest run of the turn's words appearing consecutively, in order,
+  /// in what we said.
+  int _longestRun(List<String> turn, List<String> reference) {
+    var best = 0;
+    var previous = List<int>.filled(reference.length + 1, 0);
+    for (var i = 1; i <= turn.length; i++) {
+      final current = List<int>.filled(reference.length + 1, 0);
+      for (var j = 1; j <= reference.length; j++) {
+        if (turn[i - 1] == reference[j - 1]) {
+          current[j] = previous[j - 1] + 1;
+          if (current[j] > best) best = current[j];
+        }
+      }
+      previous = current;
+    }
+    return best;
+  }
+
+  /// Longest run of the turn's words that appears IN ORDER in what we
+  /// said, as a count.
+  ///
+  /// Order is the difference between echo and a person. A transcript of
+  /// our own speech preserves our word order almost perfectly; a person
+  /// reusing our vocabulary ("can you tell me the weather today" against
+  /// "I can tell you the weather in Chicago tomorrow") reorders it and
+  /// adds their own. An unordered bag of words scores those two the same
+  /// and discards the interruption.
+  int _orderedMatch(List<String> turn, List<String> reference) {
+    // Longest common subsequence length, the standard dynamic program.
+    // Both sides are one spoken turn, so the table stays small.
+    final previous = List<int>.filled(reference.length + 1, 0);
+    final current = List<int>.filled(reference.length + 1, 0);
+    for (var i = 1; i <= turn.length; i++) {
+      for (var j = 1; j <= reference.length; j++) {
+        current[j] = turn[i - 1] == reference[j - 1]
+            ? previous[j - 1] + 1
+            : (current[j - 1] > previous[j] ? current[j - 1] : previous[j]);
+      }
+      previous.setAll(0, current);
+    }
+    return previous[reference.length];
+  }
+
+  String _tailIfFresh() {
+    final endedAt = _previousEndedAt;
+    if (endedAt == null) return '';
+    return _clock().difference(endedAt) <= tailWindow ? _previousReply : '';
   }
 
   static final _nonWord = RegExp(r'[^a-z0-9\s]');

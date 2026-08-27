@@ -169,6 +169,11 @@ class LiveVoiceSession {
   set muted(bool value) {
     if (_muted == value) return;
     _muted = value;
+    // Audio captured before the mute must not survive it: held frames
+    // would otherwise be flushed to transcription by the next gate
+    // opening, sending the server words spoken while the microphone was
+    // supposed to be off.
+    _clearPrebuffer();
     // The detector's energy window would otherwise straddle the gap and
     // read stale pre-mute audio against fresh speech.
     if (!value) _bargeIn.reset();
@@ -251,17 +256,25 @@ class LiveVoiceSession {
         _prebufferedBytes -= _prebuffer.removeAt(0).lengthInBytes;
       }
       if (!_bargeIn.addFrame(frame)) return;
+      // With echo cancellation working the floor sits in the -60s or
+      // quieter, and input towering over THAT is a person -- cut now
+      // rather than waiting out the endpointer, which is the difference
+      // between an interruption that feels instant and one that takes a
+      // second and a half. Without AEC the floor stays in the -40s, this
+      // stays false, and the words go on deciding alone.
+      final fastCut = _bargeIn.floorIsQuiet && _bargeIn.strongInput;
       Logs().d(
         'Live voice: opening the wire mid-reply '
         '(level ${_bargeIn.triggerLevel.toStringAsFixed(1)} dBFS, '
         'floor ${_bargeIn.floorDbfs.toStringAsFixed(1)} dBFS) -- '
-        'the transcript decides whether it interrupts',
+        '${fastCut ? 'cutting now, the floor says the echo is gone' : 'the transcript decides whether it interrupts'}',
       );
       _wireOpen = true;
       for (final held in _prebuffer) {
         _transport.sendAudio(held);
       }
       _clearPrebuffer();
+      if (fastCut) unawaited(_cutReply(TurnResult.bargeIn));
       return;
     }
     _transport.sendAudio(frame);
@@ -299,6 +312,16 @@ class LiveVoiceSession {
             '("${turnText.length > 60 ? '${turnText.substring(0, 60)}…' : turnText}")',
           );
           _callbacks.onTranscript('');
+          // Re-arm the gate. It was opened by something that turned out
+          // to be us, and leaving it open streams the rest of the reply's
+          // bleed straight back into the endpointer -- the wall of noise
+          // this gate exists to prevent, restored by its own false
+          // positive.
+          if (_reply != null) {
+            _wireOpen = false;
+            _clearPrebuffer();
+            _bargeIn.reset();
+          }
           return;
         }
         // Concurrent with the reply on purpose: posting is a room-history
@@ -325,16 +348,15 @@ class LiveVoiceSession {
           transport: _transport,
           sink: _sink,
           segmenter: _newSegmenter(),
-          onReplyText: (text) {
-            _echoFilter.replyText(text);
-            _callbacks.onReply(text);
-          },
+          onReplyText: _callbacks.onReply,
           onStored: _callbacks.onTurnStored,
           onError: _fail,
           // Every chunk onset re-primes the detector: the frames while a
           // chunk starts are the speaker's own voice arriving at the mic,
           // and they teach the noise floor instead of firing it.
-          onChunkPlaybackStart: _bargeIn.audioStarted,
+          // What the speaker has actually reached, as it reaches it: the
+          // only text the microphone can be echoing back.
+          onAudibleText: _echoFilter.audibleText,
         );
         _reply = reply;
         _bargeIn.reset();
@@ -376,7 +398,7 @@ class _ReplyTurn {
   final void Function(String) onReplyText;
   final void Function(String) onStored;
   final void Function(Object) onError;
-  final void Function() onChunkPlaybackStart;
+  final void Function(String) onAudibleText;
 
   _ReplyTurn({
     required this.transport,
@@ -385,7 +407,7 @@ class _ReplyTurn {
     required this.onReplyText,
     required this.onStored,
     required this.onError,
-    required this.onChunkPlaybackStart,
+    required this.onAudibleText,
   });
 
   final HeardOffsetLedger _ledger = HeardOffsetLedger();
@@ -517,7 +539,14 @@ class _ReplyTurn {
     _playQueue = _playQueue.then((_) async {
       if (_cut) return;
       _chunkOffsets.add((segmentIndex, inputTextEnd));
-      onChunkPlaybackStart();
+      // This chunk is about to be heard, so everything up to its text
+      // boundary counts as audible from now on.
+      final audible = _ledger.globalOffset(segmentIndex, inputTextEnd);
+      final full = _replyText.toString();
+      final runes = full.runes.toList();
+      onAudibleText(
+        String.fromCharCodes(runes.sublist(0, audible.clamp(0, runes.length))),
+      );
       _playback.startChunk(index, duration);
       final played = await sink.play(
         pcm,

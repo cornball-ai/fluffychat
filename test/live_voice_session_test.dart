@@ -32,14 +32,22 @@ class _FakeRecorder extends Fake implements AudioRecorder {
 /// own tests, and the session only cares about the bool.
 class _ScriptedBargeIn extends BargeInDetector {
   bool trigger = false;
-  int audioStarts = 0;
+
+  /// Scripted so the fast path stays off unless a test asks for it: the
+  /// real one only opens when echo cancellation has flattened the floor.
+  bool quietFloor = false;
+  bool strong = false;
+
   @override
   bool addFrame(Uint8List frame) => trigger;
   @override
   void reset() {}
 
   @override
-  void audioStarted() => audioStarts++;
+  bool get floorIsQuiet => quietFloor;
+
+  @override
+  bool get strongInput => strong;
 }
 
 /// Sink scripted per chunk: how far playback got, as a fraction. A fraction
@@ -229,9 +237,6 @@ void main() {
       expect(report.textHeard, 'Hello there. General Kenobi.'.runes.length);
       expect(harness.stored, ['stored']);
       expect(harness.ended, isEmpty);
-      // Every chunk's playback start re-primed the detector, so the noise
-      // floor meets each onset before the trigger can.
-      expect(harness.bargeIn.audioStarts, harness.sink.playedChunks.length);
     },
   );
 
@@ -458,6 +463,55 @@ void main() {
       expect(harness.transport.converseCalls, hasLength(2));
     },
   );
+
+  test('a false gate opening re-arms once the echo is recognised', () async {
+    // Our own bleed can open the gate. If it stayed open, the rest of the
+    // reply would stream into the endpointer -- the wall of noise the
+    // gate exists to prevent, restored by its own false positive.
+    final harness = _Harness(sinkFractions: [0.3]);
+    harness.transport.replyDeltas = ['You are a bold one my friend.'];
+    await harness.start();
+    await harness.speak('hi there');
+
+    harness.bargeIn.trigger = true;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, isNotEmpty);
+    final openedWith = harness.transport.sentFrames.length;
+
+    // What came through was us. The turn is discarded AND the gate shuts.
+    harness.transport.emitStt(
+      const SttTranscript('you are a bold one', stable: true),
+    );
+    harness.transport.emitStt(const SttTurnEnded());
+    await pumpEventQueue();
+    expect(harness.session.replying, isTrue);
+
+    harness.bargeIn.trigger = false;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+    expect(harness.transport.sentFrames, hasLength(openedWith));
+  });
+
+  test('a quiet floor lets loud input cut without waiting for words', () async {
+    // The fast path, available only where echo cancellation has flattened
+    // the floor: below the -60s, input towering over it is a person.
+    final harness = _Harness(sinkFractions: [0.3, 1.0, 1.0]);
+    harness.transport.replyDeltas = ['A long reply that keeps going on.'];
+    await harness.start();
+    await harness.speak('tell me something');
+
+    harness.bargeIn
+      ..quietFloor = true
+      ..strong = true
+      ..trigger = true;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
+
+    // Cut on energy alone -- no transcript needed, no endpointer waited on.
+    expect(harness.transport.reports.first.result, TurnResult.bargeIn);
+    expect(harness.session.replying, isFalse);
+  });
 
   test('words the reply never said interrupt it', () async {
     // The interruption path, now that loudness decides nothing: a turn
