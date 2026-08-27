@@ -269,17 +269,21 @@ void main() {
     () async {
       // First chunk plays out, second hangs at 40% -- before its midpoint, so
       // it does not count as heard.
-      final harness = _Harness(sinkFractions: [1.0, 0.4]);
+      // Extra entries: the interrupting turn starts its own reply, which
+      // plays chunks of its own.
+      final harness = _Harness(sinkFractions: [1.0, 0.4, 1.0, 1.0]);
       harness.transport.replyDeltas = ['Hello there. ', 'General Kenobi.'];
       await harness.start();
       await harness.speak('hi');
 
-      // The reply is mid-playback; the user starts talking.
-      harness.bargeIn.trigger = true;
-      harness.recorder.frames.add(Uint8List(320));
+      // The reply is mid-playback; the user says something of their own.
+      harness.transport.emitStt(
+        const SttTranscript('actually never mind that', stable: true),
+      );
+      harness.transport.emitStt(const SttTurnEnded());
       await pumpEventQueue();
 
-      final report = harness.transport.reports.single;
+      final report = harness.transport.reports.first;
       expect(report.result, TurnResult.bargeIn);
       // Heard through the first segment only.
       expect(report.textHeard, 'Hello there. '.runes.length);
@@ -292,16 +296,18 @@ void main() {
 
   test('barge-in before anything played reports an explicit zero', () async {
     // The one chunk hangs at 10%: started, never half-heard.
-    final harness = _Harness(sinkFractions: [0.1]);
+    final harness = _Harness(sinkFractions: [0.1, 1.0]);
     harness.transport.replyDeltas = ['One single sentence here.'];
     await harness.start();
     await harness.speak('hi');
 
-    harness.bargeIn.trigger = true;
-    harness.recorder.frames.add(Uint8List(320));
+    harness.transport.emitStt(
+      const SttTranscript('stop go back please', stable: true),
+    );
+    harness.transport.emitStt(const SttTurnEnded());
     await pumpEventQueue();
 
-    final report = harness.transport.reports.single;
+    final report = harness.transport.reports.first;
     expect(report.result, TurnResult.bargeIn);
     expect(report.textHeard, 0);
   });
@@ -319,8 +325,8 @@ void main() {
 
     await harness.speak('hi');
     harness.session.muted = true;
-    // A trigger-happy detector plus a playing reply: the frame is dropped
-    // before the detector sees it, so nothing is cut and nothing is sent.
+    // Muted: the frame is dropped before the wire and before the
+    // detector, so the server hears nothing at all.
     harness.bargeIn.trigger = true;
     harness.recorder.frames.add(Uint8List(320));
     await pumpEventQueue();
@@ -328,16 +334,8 @@ void main() {
     expect(harness.transport.reports, isEmpty);
     expect(harness.session.replying, isTrue);
 
-    // Unmuting restores the path: the reply is still playing, so the frame
-    // goes to the detector (not the wire) and the trigger cuts the reply.
+    // Unmuting restores the wire, mid-reply included.
     harness.session.muted = false;
-    harness.recorder.frames.add(Uint8List(320));
-    await pumpEventQueue();
-    expect(harness.transport.reports.single.result, TurnResult.bargeIn);
-    expect(harness.transport.sentFrames, hasLength(1));
-
-    // And with the reply gone, frames reach transcription again.
-    harness.bargeIn.trigger = false;
     harness.recorder.frames.add(Uint8List(320));
     await pumpEventQueue();
     expect(harness.transport.sentFrames, hasLength(2));
@@ -359,39 +357,25 @@ void main() {
     expect(harness.sink.disposed, isTrue);
   });
 
-  test(
-    'mic frames are gated while a reply plays; the cut reopens them',
-    () async {
-      // The first design sent frames to transcription during playback and
-      // trusted echo cancellation. No platform honored it: the mic heard
-      // the synthesis under the barge-in threshold but over the server
-      // VAD's, and the agent conversed with itself. This pins the gate.
-      final harness = _Harness(sinkFractions: [0.2]);
-      harness.transport.replyDeltas = ['A reply that keeps playing.'];
-      await harness.start();
-      await harness.speak('hi');
+  test('loud input during playback cuts nothing by itself', () async {
+    // Three energy-threshold designs each cut the reply on its own first
+    // syllable, with nobody speaking. Loudness now decides nothing: the
+    // detector may fire all it likes, and only words interrupt.
+    final harness = _Harness(sinkFractions: [0.2]);
+    harness.transport.replyDeltas = ['A reply that keeps playing.'];
+    await harness.start();
+    await harness.speak('hi');
 
-      // Quiet room noise (or our own speaker) during the reply: dropped.
-      harness.recorder.frames.add(Uint8List(320));
-      await pumpEventQueue();
-      expect(harness.transport.sentFrames, isEmpty);
-      expect(harness.session.replying, isTrue);
+    harness.bargeIn.trigger = true;
+    harness.recorder.frames.add(Uint8List(320));
+    await pumpEventQueue();
 
-      // Confirmed interruption energy: cuts the reply. The confirming
-      // frame itself is dropped -- the cut is what reopens the path.
-      harness.bargeIn.trigger = true;
-      harness.recorder.frames.add(Uint8List(320));
-      await pumpEventQueue();
-      expect(harness.transport.reports.single.result, TurnResult.bargeIn);
-      expect(harness.transport.sentFrames, isEmpty);
-
-      // With the reply dead, frames flow to transcription again.
-      harness.bargeIn.trigger = false;
-      harness.recorder.frames.add(Uint8List(320));
-      await pumpEventQueue();
-      expect(harness.transport.sentFrames, hasLength(1));
-    },
-  );
+    expect(harness.transport.reports, isEmpty);
+    expect(harness.session.replying, isTrue);
+    // And frames reach transcription throughout: full duplex is what
+    // lets the words arrive to be judged at all.
+    expect(harness.transport.sentFrames, hasLength(1));
+  });
 
   test(
     'a failing turn report surfaces as session failure, not silence',
@@ -461,6 +445,29 @@ void main() {
       expect(harness.transport.converseCalls, hasLength(2));
     },
   );
+
+  test('words the reply never said interrupt it', () async {
+    // The interruption path, now that loudness decides nothing: a turn
+    // whose words are the user's own cuts the reply and starts the next.
+    final harness = _Harness(sinkFractions: [0.3, 1.0, 1.0]);
+    harness.transport.replyDeltas = ['Saturday looks warm in Naperville.'];
+    await harness.start();
+    await harness.speak('what is the forecast');
+
+    expect(harness.session.replying, isTrue);
+    harness.transport.emitStt(
+      const SttTranscript('no wait tell me about Sunday', stable: true),
+    );
+    harness.transport.emitStt(const SttTurnEnded());
+    await pumpEventQueue();
+
+    expect(harness.transport.reports.first.result, TurnResult.bargeIn);
+    expect(harness.transport.converseCalls, hasLength(2));
+    expect(harness.userTurns, [
+      'what is the forecast',
+      'no wait tell me about Sunday',
+    ]);
+  });
 
   test('an empty turn (silence resolved to nothing) starts no reply', () async {
     final harness = _Harness();

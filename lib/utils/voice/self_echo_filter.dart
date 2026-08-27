@@ -23,6 +23,14 @@ class SelfEchoFilter {
   /// text for the turn to count as echo.
   final double matchFraction;
 
+  /// The same bar while a reply is actually being spoken, where the prior
+  /// is different: the microphone is definitely hearing the speaker, so a
+  /// turn that half-matches what we are saying is far more likely to be
+  /// mangled echo than a person who happens to be quoting us. A user
+  /// genuinely interrupting says something of their own, which matches
+  /// almost nothing.
+  final double matchFractionWhileSpeaking;
+
   /// Turns shorter than this many words are never filtered: "yes" or
   /// "exactly" will usually appear somewhere in a long reply, and a short
   /// genuine answer wrongly discarded is worse than a short echo fragment
@@ -30,16 +38,20 @@ class SelfEchoFilter {
   final int minWords;
 
   /// How long after a reply ends its text still counts as an echo source.
-  /// Room reverb and capture latency deliver the tail of a reply after the
-  /// session considers it over.
+  ///
+  /// Generous because playback runs well behind generation on a small
+  /// card: the session considers a reply finished when the last chunk is
+  /// handed over, while the speaker is still working through it and the
+  /// microphone is still hearing it.
   final Duration tailWindow;
 
   final DateTime Function() _clock;
 
   SelfEchoFilter({
     this.matchFraction = 0.7,
+    this.matchFractionWhileSpeaking = 0.45,
     this.minWords = 3,
-    this.tailWindow = const Duration(seconds: 10),
+    this.tailWindow = const Duration(seconds: 30),
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
@@ -63,7 +75,12 @@ class SelfEchoFilter {
   }
 
   /// Whether [turnText] is substantially our own recent speech.
-  bool isSelfEcho(String turnText) {
+  ///
+  /// [speaking] says a reply is being played right now, which lowers the
+  /// bar to [matchFractionWhileSpeaking]: the microphone is certainly
+  /// hearing the speaker, so partial matches are echo until proven
+  /// otherwise.
+  bool isSelfEcho(String turnText, {bool speaking = false}) {
     final turnWords = _words(turnText);
     if (turnWords.length < minWords) return false;
     final reference = <String, int>{};
@@ -85,7 +102,8 @@ class SelfEchoFilter {
         matched++;
       }
     }
-    return matched / turnWords.length >= matchFraction;
+    final bar = speaking ? matchFractionWhileSpeaking : matchFraction;
+    return matched / turnWords.length >= bar;
   }
 
   static final _nonWord = RegExp(r'[^a-z0-9\s]');
