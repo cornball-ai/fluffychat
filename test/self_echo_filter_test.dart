@@ -40,6 +40,30 @@ void main() {
     );
   });
 
+  test('badly mangled echo is caught by the lower speaking bar', () {
+    // Real ASR of speaker bleed comes back worse than a word or two off:
+    // "Cubs lost a rough one last night, 5-4 to Arizona at Chase Field"
+    // was heard as this. While a reply is actually playing, a partial
+    // match is echo until proven otherwise.
+    final filter = SelfEchoFilter();
+    filter.replyText(
+      'Cubs lost a rough one last night, 5-4 to Arizona at Chase Field.',
+    );
+    const heard =
+        'a rough one last night asterisk 5 bend forward to Arizona '
+        'asterisk a chase field';
+    expect(filter.isSelfEcho(heard, speaking: true), isTrue);
+  });
+
+  test('a real interruption is not echo, speaking or not', () {
+    final filter = SelfEchoFilter();
+    filter.replyText('Saturday looks warm and partly sunny in Naperville.');
+    expect(
+      filter.isSelfEcho('no wait what about Sunday evening', speaking: true),
+      isFalse,
+    );
+  });
+
   test('nothing spoken yet means nothing is echo', () {
     final filter = SelfEchoFilter();
     expect(filter.isSelfEcho('hello there general kenobi'), isFalse);
