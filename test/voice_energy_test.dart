@@ -234,69 +234,61 @@ void main() {
       });
     });
 
-    group('audio-onset priming', () {
-      // The live failure this closes: the floor learned silence during
-      // generation, so the speaker's own onset fired the trigger (measured:
-      // level -19.9 dBFS against a floor still at its -44 seed).
-      BargeInDetector primed() => BargeInDetector(
-        thresholdDbfs: -35.0,
-        sustain: const Duration(milliseconds: 200),
-        sampleRate: voiceSampleRateForTest,
-        primeFor: const Duration(milliseconds: 300),
-      );
+    group('floor adaptation', () {
+      BargeInDetector adaptive({int sampleRate = voiceSampleRateForTest}) =>
+          BargeInDetector(
+            thresholdDbfs: -35.0,
+            sustain: const Duration(milliseconds: 200),
+            sampleRate: sampleRate,
+          );
 
-      final bleed = constantFrame(3277, 160); // about -20 dBFS: loud bleed
-
-      test('frames inside the priming window teach and never fire', () {
-        final d = primed();
-        d.audioStarted();
-        // 300 ms of frames that would have fired the old detector at 200 ms.
-        for (var i = 0; i < 30; i++) {
-          expect(d.addFrame(bleed), isFalse, reason: 'fired during prime');
+      test('the floor tracks time, not frame count', () {
+        // Frame size is a platform decision and explicitly not constant, so
+        // a per-frame weight would retune the whole detector on a device
+        // that hands over 100 ms frames instead of 10 ms ones.
+        final tenMs = adaptive();
+        final hundredMs = adaptive();
+        final quietSmall = constantFrame(200, 160); // 10 ms
+        final quietLarge = constantFrame(200, 1600); // 100 ms
+        for (var i = 0; i < 100; i++) {
+          tenMs.addFrame(quietSmall);
         }
-        // The floor now sits at the bleed, not at the seed.
-        expect(d.floorDbfs, closeTo(-20.0, 1.0));
+        for (var i = 0; i < 10; i++) {
+          hundredMs.addFrame(quietLarge);
+        }
+        // One second of identical audio, two frame sizes, one answer.
+        expect(hundredMs.floorDbfs, closeTo(tenMs.floorDbfs, 0.5));
       });
 
-      test('steady bleed after priming stays below the learned bar', () {
-        final d = primed();
-        d.audioStarted();
-        for (var i = 0; i < 30; i++) {
-          d.addFrame(bleed);
+      test('a quiet floor plus a loud voice is strong input', () {
+        // What working echo cancellation looks like: near-silence between
+        // words, and a person towering over it.
+        final d = adaptive();
+        final silence = constantFrame(2, 160); // about -84 dBFS
+        for (var i = 0; i < 200; i++) {
+          d.addFrame(silence);
         }
-        // A full sustain window of continuing bleed: no fire, because the
-        // effective threshold now rides the floor plus the margin.
-        for (var i = 0; i < 40; i++) {
-          expect(d.addFrame(bleed), isFalse, reason: 'self-cut at frame $i');
-        }
-      });
+        expect(d.floorIsQuiet, isTrue);
 
-      test('a voice above the bleed still cuts through', () {
-        final d = primed();
-        d.audioStarted();
-        for (var i = 0; i < 30; i++) {
-          d.addFrame(bleed);
-        }
-        // ~12 dB over the bleed: a person actually talking over the reply.
-        final voice = constantFrame(13107, 160);
+        final voice = constantFrame(3277, 160); // about -20 dBFS
         var fired = false;
         for (var i = 0; i < 25 && !fired; i++) {
           fired = d.addFrame(voice);
         }
         expect(fired, isTrue);
+        expect(d.strongInput, isTrue);
       });
 
-      test('reset clears an unexpired priming window', () {
-        final d = primed();
-        d.audioStarted();
-        d.reset();
-        // Fixed-threshold behavior is back: a sustained loud run fires.
-        final loud = constantFrame(16384, 160);
-        var fired = false;
-        for (var i = 0; i < 21 && !fired; i++) {
-          fired = d.addFrame(loud);
+      test('a floor full of bleed is never called quiet', () {
+        // No echo cancellation: the between-words level sits in the -40s,
+        // where our own speaker can clear any margin you name. The fast
+        // path must stay shut.
+        final d = adaptive();
+        final bleed = constantFrame(160, 160); // about -46 dBFS
+        for (var i = 0; i < 200; i++) {
+          d.addFrame(bleed);
         }
-        expect(fired, isTrue);
+        expect(d.floorIsQuiet, isFalse);
       });
     });
   });
