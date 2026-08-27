@@ -20,6 +20,9 @@ class NaviRailItem extends StatelessWidget {
   final Widget? selectedIcon;
   final bool Function(Room)? unreadBadgeFilter;
 
+  /// Whose rooms the unread badge counts; null means the active account.
+  final Client? badgeClient;
+
   const NaviRailItem({
     required this.toolTip,
     required this.isSelected,
@@ -27,6 +30,7 @@ class NaviRailItem extends StatelessWidget {
     required this.icon,
     this.selectedIcon,
     this.unreadBadgeFilter,
+    this.badgeClient,
     super.key,
   });
   @override
@@ -83,6 +87,7 @@ class NaviRailItem extends StatelessWidget {
                             ? icon
                             : UnreadRoomsBadge(
                                 filter: unreadBadgeFilter,
+                                client: badgeClient,
                                 badgePosition: BadgePosition.topEnd(
                                   top: -12,
                                   end: -8,

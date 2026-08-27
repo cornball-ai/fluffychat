@@ -21,16 +21,29 @@ class SpacesNavigationRail extends StatelessWidget {
   final void Function() onGoToChats;
   final void Function(String) onGoToSpaceId;
 
+  /// Switches the active account. When set and more than one account is
+  /// logged in, the rail leads with one avatar per account.
+  final void Function(Client client)? onSwitchClient;
+
   const SpacesNavigationRail({
     required this.activeSpaceId,
     required this.onGoToChats,
     required this.onGoToSpaceId,
+    this.onSwitchClient,
     super.key,
   });
 
   @override
   Widget build(BuildContext context) {
-    final client = Matrix.of(context).client;
+    final matrix = Matrix.of(context);
+    final client = matrix.client;
+    final onSwitchClient = this.onSwitchClient;
+    final accounts = onSwitchClient == null
+        ? const <Client>[]
+        : matrix.widget.clients.where((c) => c.isLogged()).toList();
+    // A rail of one avatar is the avatar menu with extra steps; the account
+    // section appears only once there is something to switch between.
+    final showAccounts = accounts.length > 1;
     final coloredMode = !FluffyThemes.isColumnMode(context);
     final theme = Theme.of(context);
     return Material(
@@ -56,8 +69,52 @@ class SpacesNavigationRail extends StatelessWidget {
                     child: ListView.builder(
                       padding: EdgeInsets.symmetric(vertical: 4),
                       scrollDirection: Axis.vertical,
-                      itemCount: allSpaces.length + 2,
+                      itemCount:
+                          (showAccounts ? accounts.length + 1 : 0) +
+                          allSpaces.length +
+                          2,
                       itemBuilder: (context, i) {
+                        if (showAccounts) {
+                          if (i < accounts.length) {
+                            final account = accounts[i];
+                            return NaviRailItem(
+                              toolTip: account.userID ?? '',
+                              isSelected: account == client,
+                              onTap: () => onSwitchClient!(account),
+                              unreadBadgeFilter: (room) => true,
+                              badgeClient: account,
+                              icon: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: FutureBuilder<Profile>(
+                                  future: account.fetchOwnProfile(),
+                                  builder: (context, snapshot) => Avatar(
+                                    mxContent: snapshot.data?.avatarUrl,
+                                    name:
+                                        snapshot.data?.displayName ??
+                                        account.userID?.localpart ??
+                                        '',
+                                    size: 32,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          if (i == accounts.length) {
+                            return SizedBox(
+                              height: 12,
+                              child: Center(
+                                child: SizedBox(
+                                  width: 32,
+                                  child: Divider(
+                                    height: 1,
+                                    color: theme.dividerColor,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          i -= accounts.length + 1;
+                        }
                         if (i == 0) {
                           return NaviRailItem(
                             isSelected: activeSpaceId == null,

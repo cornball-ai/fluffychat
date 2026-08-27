@@ -14,18 +14,24 @@ class UnreadRoomsBadge extends StatelessWidget {
   final b.BadgePosition? badgePosition;
   final Widget? child;
 
+  /// Whose rooms to count. Defaults to the active account; the navigation
+  /// rail's account avatars pass their own client so each badge counts its
+  /// own unreads.
+  final Client? client;
+
   const UnreadRoomsBadge({
     super.key,
     required this.filter,
     this.badgePosition,
     this.child,
+    this.client,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final unreadCount = Matrix.of(context).client.rooms
+    final unreadCount = (client ?? Matrix.of(context).client).rooms
         .where(filter)
         .where((r) => (r.isUnread || r.membership == Membership.invite))
         .length;
