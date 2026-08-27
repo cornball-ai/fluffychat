@@ -63,18 +63,30 @@ class LiveVoiceCallbacks {
 /// client is the orchestrator: barge-in is "cancel the streams I hold", and
 /// nobody else holds them.
 ///
-/// The turn loop: while no reply is playing, mic frames flow to the
-/// transcription stream. While one IS playing, the mic is half-duplex:
-/// frames feed only the barge-in detector, and reach transcription again
-/// after a confirmed interruption cuts the reply. The first design sent
-/// frames always, trusting the capture config's echo cancellation -- which
-/// turned out to be a request no platform honored, so the microphone heard
-/// our own synthesis at levels below the barge-in threshold but well above
-/// the server VAD's, the reply came back transcribed as a user turn, and
-/// the agent held a conversation with itself. Gating on the detector keeps
-/// quiet echo out while real interruptions still cut through; the frames
-/// the detector consumes while deciding are the price, and the endpointer
-/// picks the speaker up from the cut.
+/// The turn loop: mic frames flow to the transcription stream at all
+/// times, and WHAT COMES BACK AS WORDS decides whether the user
+/// interrupted. A turn whose text is substantially the reply we are
+/// currently speaking is our own voice arriving back through the
+/// microphone and is discarded; a turn that says something else is a real
+/// interruption and cuts the reply.
+///
+/// Loudness decides nothing, after three failed attempts to make it. With
+/// no working acoustic echo cancellation the microphone hears our own
+/// speaker, and no energy threshold can separate that from a person: a
+/// fixed threshold cut the reply on its own first syllable, an adaptive
+/// floor learned silence during the seconds before audio arrived and then
+/// did the same, and priming the floor at playback start missed the sound
+/// entirely because output latency delivers it after the window closes.
+/// Every version cut the reply mid-word with nobody speaking. Words are
+/// the one signal that carries the answer: we know what we just said.
+///
+/// The costs are honest ones. Interruption latency becomes the
+/// endpointer's rather than 200 ms of energy, so a few more words play
+/// before the reply stops. Transcription hears our own speech, which is
+/// noise on the wire. Both are worth paying for a conversation that does
+/// not interrupt itself, and both shrink to nothing the day real echo
+/// cancellation exists under the capture path -- at which point energy
+/// barge-in can come back as the fast path it was meant to be.
 ///
 /// Stable transcripts accumulate; the server's SttTurnEnded sends the
 /// accumulated turn to the agent. Reply deltas stream to the UI and through
@@ -206,23 +218,17 @@ class LiveVoiceSession {
 
   void _onMicFrame(Uint8List frame) {
     if (!_running || _stopping || _muted) return;
-    if (_reply != null) {
-      // Half-duplex while the reply plays: see the class comment. The
-      // frame that confirms the interruption is itself dropped -- the cut
-      // it triggers is what reopens the path for the frames after it.
-      if (_bargeIn.addFrame(frame)) {
-        // The numbers name which failure this was: a user talking over
-        // the reply towers over the floor, our own speaker bleed barely
-        // clears it, and a threshold set wrong looks like neither.
-        Logs().i(
-          'Live voice: energy barge-in cut the reply '
-          '(level ${_bargeIn.triggerLevel.toStringAsFixed(1)} dBFS, '
-          'floor ${_bargeIn.floorDbfs.toStringAsFixed(1)} dBFS, '
-          'sustained ${_bargeIn.triggeredAfter.inMilliseconds} ms)',
-        );
-        unawaited(_cutReply(TurnResult.bargeIn));
-      }
-      return;
+    // Full duplex: frames flow to transcription whether or not a reply is
+    // playing. WHAT was said decides an interruption now, not how loud it
+    // was -- see the class comment. The detector still runs, but only to
+    // put numbers in the log.
+    if (_reply != null && _bargeIn.addFrame(frame)) {
+      Logs().d(
+        'Live voice: loud input during playback '
+        '(level ${_bargeIn.triggerLevel.toStringAsFixed(1)} dBFS, '
+        'floor ${_bargeIn.floorDbfs.toStringAsFixed(1)} dBFS) -- '
+        'the transcript decides whether it interrupts',
+      );
     }
     _transport.sendAudio(frame);
   }
@@ -248,7 +254,7 @@ class LiveVoiceSession {
         // Our own speech, transcribed off the speaker: without this, the
         // bot's reply posts as the user's words and the agent answers
         // itself. Discarded entirely -- not posted, not sent.
-        if (_echoFilter.isSelfEcho(turnText)) {
+        if (_echoFilter.isSelfEcho(turnText, speaking: _reply != null)) {
           Logs().i(
             'Live voice: discarded self-echo turn '
             '("${turnText.length > 60 ? '${turnText.substring(0, 60)}…' : turnText}")',
