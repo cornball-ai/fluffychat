@@ -2802,6 +2802,7 @@
     "muteMicrophone": "Mute microphone",
     "unmuteMicrophone": "Unmute microphone",
     "messageEmptied": "Message removed",
+    "showNavigationRailWide": "Show navigation rail in wide windows",
     "voiceModeListening": "Listening…",
     "voiceModeSpeaking": "Speaking…",
     "voiceModeMuted": "Muted"

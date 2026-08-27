@@ -17,6 +17,7 @@ import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
+import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
 
@@ -69,6 +70,11 @@ class SettingsStyleView extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            Divider(color: theme.dividerColor),
+            SettingsSwitchListTile.adaptive(
+              title: L10n.of(context).showNavigationRailWide,
+              setting: AppSettings.displayNavigationRailWide,
             ),
             Divider(color: theme.dividerColor),
             ListTile(
