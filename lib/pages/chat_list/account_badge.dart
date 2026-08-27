@@ -2,19 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
+import 'package:fluffychat/utils/string_color.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
 
-/// Whose account a room belongs to, for the unified inbox where two
-/// accounts' rooms sit in one list and nothing else on the row says which is
-/// which.
+/// Whose account a room belongs to, for the unified inbox where two accounts'
+/// rooms sit in one list and nothing else on the row says which is which.
 ///
-/// It shows the homeserver rather than the person, because the accounts are
+/// It shows the user ID rather than the person, because the accounts are
 /// usually the same human: a display name and a profile picture are the two
 /// things least likely to tell them apart, and drawing either costs a profile
-/// fetch per row. A domain is already in hand, colours deterministically, and
-/// is the thing you actually want to read off the badge.
+/// fetch per row. Two letters, the localpart's and the homeserver's, so that
+/// neither two accounts on one server nor one person on two servers collapse
+/// into the same badge. The colour comes from the whole id, but it is a tie
+/// breaker rather than the identity: the palette holds twelve hues.
 class AccountBadge extends StatelessWidget {
   final Client client;
   final double size;
@@ -25,7 +28,7 @@ class AccountBadge extends StatelessWidget {
 
   const AccountBadge({
     required this.client,
-    this.size = 20,
+    this.size = 22,
     this.borderColor,
     super.key,
   });
@@ -33,12 +36,16 @@ class AccountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final userId = client.userID ?? '';
+    final scheme = userId.colorScheme;
     final borderRadius = BorderRadius.circular(size / 2);
     return Tooltip(
-      message: client.userID ?? '',
+      message: userId,
       child: Avatar(
         client: client,
-        name: client.userID?.domain ?? '',
+        name: accountBadgeLabel(userId),
+        backgroundColor: scheme.primaryContainer,
+        textColor: scheme.onPrimaryContainer,
         size: size,
         borderRadius: borderRadius,
         shapeBorder: RoundedSuperellipseBorder(

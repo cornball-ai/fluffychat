@@ -132,9 +132,23 @@ enum AppSettings<T> {
   static SharedPreferences get store => _store!;
   static SharedPreferences? _store;
 
+  /// Bumped on every write, so a page built out of settings can rebuild when
+  /// one changes underneath it.
+  ///
+  /// A setting is written on the settings page while the page it configures
+  /// is still mounted behind it. Without a signal the change lands piecemeal
+  /// at whatever unrelated rebuild comes next: the parts read inside a
+  /// StreamBuilder pick up the new value while everything the surrounding
+  /// build captured -- which accounts to merge, which streams to listen to --
+  /// is still what it was before the write.
+  static final ValueNotifier<int> changes = ValueNotifier(0);
+
+  static void _changed() => changes.value++;
+
   static Future<void> reset({bool loadWebConfigFile = true}) async {
     await AppSettings._store!.clear();
     await init(loadWebConfigFile: loadWebConfigFile);
+    _changed();
   }
 
   static Future<SharedPreferences> init({bool loadWebConfigFile = true}) async {
@@ -213,7 +227,10 @@ extension AppSettingsBoolNExtension on AppSettings<bool?> {
     return value.asValue?.value;
   }
 
-  Future<void> setItem(bool value) => AppSettings.store.setBool(key, value);
+  Future<void> setItem(bool value) async {
+    await AppSettings.store.setBool(key, value);
+    AppSettings._changed();
+  }
 }
 
 extension AppSettingsBoolExtension on AppSettings<bool> {
@@ -230,7 +247,10 @@ extension AppSettingsBoolExtension on AppSettings<bool> {
     return value.asValue?.value ?? defaultValue;
   }
 
-  Future<void> setItem(bool value) => AppSettings.store.setBool(key, value);
+  Future<void> setItem(bool value) async {
+    await AppSettings.store.setBool(key, value);
+    AppSettings._changed();
+  }
 }
 
 extension AppSettingsStringExtension on AppSettings<String> {
@@ -247,7 +267,10 @@ extension AppSettingsStringExtension on AppSettings<String> {
     return value.asValue?.value ?? defaultValue;
   }
 
-  Future<void> setItem(String value) => AppSettings.store.setString(key, value);
+  Future<void> setItem(String value) async {
+    await AppSettings.store.setString(key, value);
+    AppSettings._changed();
+  }
 }
 
 extension AppSettingsIntExtension on AppSettings<int> {
@@ -264,7 +287,10 @@ extension AppSettingsIntExtension on AppSettings<int> {
     return value.asValue?.value ?? defaultValue;
   }
 
-  Future<void> setItem(int value) => AppSettings.store.setInt(key, value);
+  Future<void> setItem(int value) async {
+    await AppSettings.store.setInt(key, value);
+    AppSettings._changed();
+  }
 }
 
 extension AppSettingsDoubleExtension on AppSettings<double> {
@@ -281,5 +307,8 @@ extension AppSettingsDoubleExtension on AppSettings<double> {
     return value.asValue?.value ?? defaultValue;
   }
 
-  Future<void> setItem(double value) => AppSettings.store.setDouble(key, value);
+  Future<void> setItem(double value) async {
+    await AppSettings.store.setDouble(key, value);
+    AppSettings._changed();
+  }
 }

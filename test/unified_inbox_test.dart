@@ -99,6 +99,69 @@ void main() {
     });
   });
 
+  group('RoomRef', () {
+    // Two accounts joined to the same room is representable in Matrix and
+    // shows as two rows. Anything keyed on the room id alone merges them:
+    // duplicate widget keys, one account's space claiming the other's copy,
+    // and both rows highlighting when only one of them is open.
+    const cornball = 'FluffyChat-cornball';
+    const matrixOrg = 'FluffyChat-matrixorg';
+    const shared = '!shared:example.com';
+
+    test('the same room on two accounts is two different rows', () {
+      const mine = (cornball, shared);
+      const theirs = (matrixOrg, shared);
+      expect(mine, isNot(theirs));
+    });
+
+    test('a space lookup cannot cross accounts', () {
+      final spaces = <RoomRef, String>{(cornball, shared): 'cornball space'};
+
+      expect(spaces[(cornball, shared)], 'cornball space');
+      expect(spaces[(matrixOrg, shared)], isNull);
+    });
+
+    test('the same row on the same account is still one row', () {
+      // Equality has to hold as well as fail, or the list rebuilds every
+      // element on every frame instead of reusing them.
+      const once = (cornball, shared);
+      const again = (cornball, shared);
+      expect(once, again);
+      expect(once.hashCode, again.hashCode);
+    });
+  });
+
+  group('accountBadgeLabel', () {
+    test('two accounts on one homeserver do not collide', () {
+      // The domain alone gives both of them "m". Avatar takes the first
+      // letter of the first word and of the last, so the localpart has to be
+      // in there.
+      expect(accountBadgeLabel('@troy:matrix.org'), 'troy matrix.org');
+      expect(accountBadgeLabel('@dirk:matrix.org'), 'dirk matrix.org');
+    });
+
+    test('one person on two homeservers does not collide', () {
+      expect(accountBadgeLabel('@troy:cornball.ai'), 'troy cornball.ai');
+      expect(
+        accountBadgeLabel('@troyhernandez:matrix.org'),
+        'troyhernandez matrix.org',
+      );
+    });
+
+    test('a missing or malformed id draws nothing rather than throwing', () {
+      // Avatar reads the first character of the first word, so an empty
+      // localpart or domain is a RangeError waiting on a list row.
+      expect(accountBadgeLabel(null), '');
+      expect(accountBadgeLabel(''), '');
+      expect(accountBadgeLabel('@troy:'), '');
+      expect(accountBadgeLabel('@:matrix.org'), '');
+    });
+
+    test('an id with no colon is passed through, not split', () {
+      expect(accountBadgeLabel('troy'), 'troy');
+    });
+  });
+
   group('roomRoute', () {
     test('leaves the route alone for the active account', () {
       expect(roomRoute('!abc:example.com'), '/rooms/!abc:example.com');

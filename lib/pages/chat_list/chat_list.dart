@@ -86,13 +86,45 @@ class ChatListController extends State<ChatList>
 
   String? get activeSpaceId => _activeSpaceId;
 
-  Future<void> setActiveSpace(String spaceId) async {
-    await Matrix.of(context).client.getRoomById(spaceId)!.postLoad();
+  /// Enters a space, on [client] when it is not the active account.
+  ///
+  /// The space view, its children and the rail all resolve against the active
+  /// client, so entering another account's space means becoming that account
+  /// first. Resolving the id there rather than asserting on the active client
+  /// is also what keeps a stale or foreign id from crashing the list.
+  Future<void> setActiveSpace(String spaceId, {Client? client}) async {
+    final matrix = Matrix.of(context);
+    final owner = client ?? matrix.client;
+    final space = owner.getRoomById(spaceId);
+    if (space == null) return;
+    await space.postLoad();
+    if (!mounted) return;
 
     setState(() {
+      if (owner != matrix.client) matrix.setActiveClient(owner);
       _activeSpaceId = spaceId;
     });
   }
+
+  /// Makes the room's own account active, and reports whether it had to.
+  ///
+  /// Every route that resolves a room id -- the chat page, the archive, the
+  /// ignore list -- looks it up on the active client, so a row from the other
+  /// account has to switch before it navigates or it opens on the wrong
+  /// account, or on nothing.
+  Client? _activateOwner(Room room) {
+    final matrix = Matrix.of(context);
+    if (room.client == matrix.client) return null;
+    setState(() => matrix.setActiveClient(room.client));
+    return room.client;
+  }
+
+  /// Whether [room] is the chat currently open.
+  ///
+  /// The open chat resolves against the active account, so the id alone
+  /// highlights both accounts' rows for a room they are both in.
+  bool isActiveChat(Room room) =>
+      activeChat == room.id && room.client == Matrix.of(context).client;
 
   void clearActiveSpace() => setState(() {
     _activeSpaceId = null;
@@ -101,10 +133,6 @@ class ChatListController extends State<ChatList>
   Future<void> onChatTap(Room room) async {
     final l10n = L10n.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final matrix = Matrix.of(context);
-    // Null whenever the room already belongs to the active account, which is
-    // every room outside the unified inbox.
-    final otherClient = room.client == matrix.client ? null : room.client;
     if (room.membership == Membership.invite) {
       final joinResult = await showFutureLoadingDialog(
         context: context,
@@ -129,13 +157,16 @@ class ChatListController extends State<ChatList>
       return;
     }
 
+    if (room.isSpace) {
+      setActiveSpace(room.id, client: room.client);
+      return;
+    }
+
     // Switch here rather than leaving it to the `?client=` below, so the rail
     // and the header agree about whose account this is on the same frame the
     // chat opens. The route parameter still carries it, for the cold start
     // where there is no list to have done this.
-    if (otherClient != null) {
-      setState(() => matrix.setActiveClient(otherClient));
-    }
+    final otherClient = _activateOwner(room);
 
     if (room.membership == Membership.leave) {
       context.go(
@@ -145,14 +176,6 @@ class ChatListController extends State<ChatList>
           clientName: otherClient?.clientName,
         ),
       );
-      return;
-    }
-
-    if (room.isSpace) {
-      // A space belongs to one homeserver, so entering another account's
-      // space means being in that account: the space view, its children and
-      // the rail all read the active client.
-      setActiveSpace(room.id);
       return;
     }
 
@@ -479,6 +502,12 @@ class ChatListController extends State<ChatList>
     });
 
     _updateRoomTags();
+    // The settings that shape this list -- the unified inbox, the rail -- are
+    // written on a page this one is still mounted behind. Rebuilding on the
+    // write is what makes the change land whole: the merged rooms, their
+    // badges, the tag counts and the set of accounts being listened to all
+    // change together instead of at the next sync, one at a time.
+    AppSettings.changes.addListener(_onSettingsChanged);
     // Every account, not just the active one, because the unified inbox can
     // be switched on while this list is mounted and the tag chips it draws
     // would otherwise stop updating for the account that was not active when
@@ -524,6 +553,7 @@ class ChatListController extends State<ChatList>
     for (final subscription in _onRoomTagUpdate) {
       subscription.cancel();
     }
+    AppSettings.changes.removeListener(_onSettingsChanged);
     scrollController.removeListener(_onScroll);
     searchRequests.removeListener(_onSearchRequested);
     searchController.dispose();
@@ -785,7 +815,7 @@ class ChatListController extends State<ChatList>
 
     switch (action) {
       case ChatContextAction.goToSpace:
-        setActiveSpace(space!.id);
+        setActiveSpace(space!.id, client: space.client);
         return;
       case ChatContextAction.favorite:
         await showFutureLoadingDialog(
@@ -815,6 +845,10 @@ class ChatListController extends State<ChatList>
           EventTypes.RoomMember,
           room.client.userID!,
         );
+        // The ignore list is per account and edits the active one, so
+        // blocking from another account's invite has to switch first or it
+        // ignores the user on the wrong account and leaves the invite there.
+        _activateOwner(room);
         context.go(
           '/rooms/settings/security/ignorelist',
           extra: inviteEvent?.senderId,
@@ -909,6 +943,12 @@ class ChatListController extends State<ChatList>
   }
 
   Map<String, int> roomTags = {};
+
+  /// A settings write recomputes the tags and, through the setState inside,
+  /// rebuilds the list against whatever the setting now says.
+  void _onSettingsChanged() {
+    if (mounted) _updateRoomTags();
+  }
 
   void _updateRoomTags([_]) {
     roomTags.clear();

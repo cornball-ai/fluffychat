@@ -11,6 +11,7 @@ import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
 import 'package:fluffychat/pages/chat_list/space_view.dart';
+import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/public_room_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -48,12 +49,14 @@ class ChatListViewBody extends StatelessWidget {
     final spaces = clients
         .expand((client) => client.rooms)
         .where((r) => r.isSpace);
-    final spaceDelegateCandidates = <String, Room>{};
+    // Keyed by account as well as room, or one account's space claims the
+    // other account's copy of a room they are both in.
+    final spaceDelegateCandidates = <RoomRef, Room>{};
     for (final space in spaces) {
       for (final spaceChild in space.spaceChildren) {
         final roomId = spaceChild.roomId;
         if (roomId == null) continue;
-        spaceDelegateCandidates[roomId] = space;
+        spaceDelegateCandidates[(space.client.clientName, roomId)] = space;
       }
     }
 
@@ -76,7 +79,8 @@ class ChatListViewBody extends StatelessWidget {
             .where(
               (room) =>
                   !AppSettings.hideRoomsInSpaces.value ||
-                  spaceDelegateCandidates[room.id] == null,
+                  spaceDelegateCandidates[(room.client.clientName, room.id)] ==
+                      null,
             )
             .toList();
 
@@ -243,17 +247,18 @@ class ChatListViewBody extends StatelessWidget {
                   itemCount: rooms.length,
                   itemBuilder: (BuildContext context, int i) {
                     final room = rooms[i];
-                    final space = spaceDelegateCandidates[room.id];
+                    final ref = (room.client.clientName, room.id);
+                    final space = spaceDelegateCandidates[ref];
                     return ChatListItem(
                       room,
                       space: space,
                       accountClient: unified ? room.client : null,
-                      key: Key('chat_list_item_${room.id}'),
+                      key: ValueKey(ref),
                       filter: filter,
                       onTap: () => controller.onChatTap(room),
                       onLongPress: (context) =>
                           controller.chatContextAction(room, context, space),
-                      activeChat: controller.activeChat == room.id,
+                      activeChat: controller.isActiveChat(room),
                     );
                   },
                 ),

@@ -2,8 +2,34 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The two decisions the unified inbox makes, kept free of Matrix types so
-// the ordering and the route can be tested without a client.
+// What the unified inbox decides, kept free of Matrix types so the ordering,
+// the identity and the route can be tested without a client.
+
+/// Identifies one row of the list.
+///
+/// A room id is unique on a homeserver, but two accounts can both be joined
+/// to the same room, and then the list holds two rows that are not the same
+/// row: their own unread counts, their own read markers, and only one of them
+/// is the one that is open. Widget keys, the space lookup and the active
+/// highlight all need both halves, or they silently merge the two.
+typedef RoomRef = (String clientName, String roomId);
+
+/// The two letters a badge shows for [userId], as a name for `Avatar` to
+/// split: the localpart's initial and the homeserver's.
+///
+/// One letter is not enough either way round. Two accounts on one homeserver
+/// share a domain initial, two accounts of the same person share a localpart
+/// initial, and colour cannot break the tie -- the palette has twelve hues,
+/// so a collision is ordinary rather than unlucky.
+String accountBadgeLabel(String? userId) {
+  if (userId == null || userId.isEmpty) return '';
+  final colon = userId.indexOf(':');
+  if (colon < 0) return userId;
+  final localpart = userId.substring(0, colon).replaceFirst('@', '');
+  final domain = userId.substring(colon + 1);
+  if (localpart.isEmpty || domain.isEmpty) return '';
+  return '$localpart $domain';
+}
 
 /// Every shown account's rooms in one order.
 ///
