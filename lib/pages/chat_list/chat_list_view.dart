@@ -20,9 +20,15 @@ class ChatListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final columnMode = FluffyThemes.isColumnMode(context);
+    // One switch per layout, because they answer different questions: on
+    // a phone the rail is an extra the user opts into, on a desktop it is
+    // the default the user may want their screen back from.
+    final showRail = columnMode
+        ? AppSettings.displayNavigationRailWide.value
+        : AppSettings.displayNavigationRail.value;
     final oneColumnSpacesMode =
-        !FluffyThemes.isColumnMode(context) &&
-        AppSettings.displayNavigationRail.value;
+        !columnMode && AppSettings.displayNavigationRail.value;
     return PopScope(
       canPop: !controller.isSearchMode && controller.activeSpaceId == null,
       onPopInvokedWithResult: (pop, _) {
@@ -43,9 +49,7 @@ class ChatListView extends StatelessWidget {
             child: AnimatedSize(
               duration: FluffyThemes.animationDuration,
               curve: FluffyThemes.animationCurve,
-              child:
-                  (FluffyThemes.isColumnMode(context) ||
-                      AppSettings.displayNavigationRail.value)
+              child: showRail
                   ? SpacesNavigationRail(
                       activeSpaceId: controller.activeSpaceId,
                       onGoToChats: controller.clearActiveSpace,
@@ -58,10 +62,8 @@ class ChatListView extends StatelessWidget {
                     ),
             ),
           ),
-          if (FluffyThemes.isColumnMode(context) ||
-              AppSettings.displayNavigationRail.value)
-            if (FluffyThemes.isColumnMode(context))
-              Container(width: 1, color: Theme.of(context).dividerColor),
+          if (showRail && columnMode)
+            Container(width: 1, color: Theme.of(context).dividerColor),
 
           Expanded(
             child: GestureDetector(

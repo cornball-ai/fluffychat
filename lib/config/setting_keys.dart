@@ -63,6 +63,14 @@ enum AppSettings<T> {
     240,
   ),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
+
+  /// The same rail in column mode, where it used to be unconditional --
+  /// so a wide window could not hide it however much screen the room list
+  /// deserved. Defaults on, which is what column mode always did.
+  displayNavigationRailWide<bool>(
+    'chat.fluffy.display_navigation_rail_wide',
+    true,
+  ),
   experimentalVoip<bool>('chat.fluffy.experimental_voip', false),
   experimentalLiveVoice<bool>('chat.fluffy.experimental_live_voice', false),
   // The voice agent's gRPC address as host:port. Plain means an insecure
