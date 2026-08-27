@@ -71,6 +71,11 @@ enum AppSettings<T> {
     'chat.fluffy.display_navigation_rail_wide',
     true,
   ),
+
+  /// Show every logged-in account's rooms in one list instead of the active
+  /// account's alone. Off by default: a single-account user gets nothing out
+  /// of it, and it is the merged path that carries the risk.
+  unifiedInbox<bool>('chat.fluffy.unified_inbox', false),
   experimentalVoip<bool>('chat.fluffy.experimental_voip', false),
   experimentalLiveVoice<bool>('chat.fluffy.experimental_live_voice', false),
   // The voice agent's gRPC address as host:port. Plain means an insecure

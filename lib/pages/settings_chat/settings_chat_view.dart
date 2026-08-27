@@ -51,6 +51,12 @@ class SettingsChatView extends StatelessWidget {
                 title: L10n.of(context).hideRoomsInSpaces,
                 setting: AppSettings.hideRoomsInSpaces,
               ),
+              if (Matrix.of(context).isMultiAccount)
+                SettingsSwitchListTile.adaptive(
+                  title: L10n.of(context).unifiedInbox,
+                  subtitle: L10n.of(context).unifiedInboxDescription,
+                  setting: AppSettings.unifiedInbox,
+                ),
               SettingsSwitchListTile.adaptive(
                 title: L10n.of(context).hideInvalidOrUnknownMessageFormats,
                 setting: AppSettings.hideUnknownEvents,
