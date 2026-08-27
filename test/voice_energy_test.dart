@@ -233,6 +233,72 @@ void main() {
         expect(d.triggerLevel, closeTo(-6.02, 0.01));
       });
     });
+
+    group('audio-onset priming', () {
+      // The live failure this closes: the floor learned silence during
+      // generation, so the speaker's own onset fired the trigger (measured:
+      // level -19.9 dBFS against a floor still at its -44 seed).
+      BargeInDetector primed() => BargeInDetector(
+        thresholdDbfs: -35.0,
+        sustain: const Duration(milliseconds: 200),
+        sampleRate: voiceSampleRateForTest,
+        primeFor: const Duration(milliseconds: 300),
+      );
+
+      final bleed = constantFrame(3277, 160); // about -20 dBFS: loud bleed
+
+      test('frames inside the priming window teach and never fire', () {
+        final d = primed();
+        d.audioStarted();
+        // 300 ms of frames that would have fired the old detector at 200 ms.
+        for (var i = 0; i < 30; i++) {
+          expect(d.addFrame(bleed), isFalse, reason: 'fired during prime');
+        }
+        // The floor now sits at the bleed, not at the seed.
+        expect(d.floorDbfs, closeTo(-20.0, 1.0));
+      });
+
+      test('steady bleed after priming stays below the learned bar', () {
+        final d = primed();
+        d.audioStarted();
+        for (var i = 0; i < 30; i++) {
+          d.addFrame(bleed);
+        }
+        // A full sustain window of continuing bleed: no fire, because the
+        // effective threshold now rides the floor plus the margin.
+        for (var i = 0; i < 40; i++) {
+          expect(d.addFrame(bleed), isFalse, reason: 'self-cut at frame $i');
+        }
+      });
+
+      test('a voice above the bleed still cuts through', () {
+        final d = primed();
+        d.audioStarted();
+        for (var i = 0; i < 30; i++) {
+          d.addFrame(bleed);
+        }
+        // ~12 dB over the bleed: a person actually talking over the reply.
+        final voice = constantFrame(13107, 160);
+        var fired = false;
+        for (var i = 0; i < 25 && !fired; i++) {
+          fired = d.addFrame(voice);
+        }
+        expect(fired, isTrue);
+      });
+
+      test('reset clears an unexpired priming window', () {
+        final d = primed();
+        d.audioStarted();
+        d.reset();
+        // Fixed-threshold behavior is back: a sustained loud run fires.
+        final loud = constantFrame(16384, 160);
+        var fired = false;
+        for (var i = 0; i < 21 && !fired; i++) {
+          fired = d.addFrame(loud);
+        }
+        expect(fired, isTrue);
+      });
+    });
   });
 }
 
