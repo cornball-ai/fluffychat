@@ -4,6 +4,7 @@
 
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
+import 'package:fluffychat/utils/voice/voice_turn.dart';
 import 'package:flutter/material.dart';
 
 /// The six-bar waveform glyph on the live-voice entry button.
@@ -62,8 +63,15 @@ class _VoiceBarsPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-/// The simplified full-screen surface a live conversation runs in: a status
-/// orb, the words as they happen, a mute toggle, and the way out.
+/// The full-screen surface a live conversation runs in: the conversation
+/// itself as it happens, a mute toggle, and the way out.
+///
+/// It shows the words rather than a state, because a state cannot be read at
+/// the pace speech happens. The reply is drawn twice over: the part the
+/// speaker has reached in full contrast, the part still queued behind it
+/// dimmed, so a glance says how far along the sentence being spoken is. Both
+/// come from the same offsets that decide what an interruption reports as
+/// heard, so the page and the agent cannot disagree about what was said.
 ///
 /// The screen renders state it does not own. The session lives in
 /// [ChatController] (it must survive navigation), and this screen only
@@ -89,11 +97,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     upperBound: 1.06,
   );
 
+  final ScrollController _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
     widget.controller.liveVoiceRunning.addListener(_onRunningChanged);
     widget.controller.liveVoiceSpeaking.addListener(_onSpeakingChanged);
+    widget.controller.liveVoiceTurns.addListener(_onTurnsChanged);
     _onSpeakingChanged();
   }
 
@@ -101,6 +112,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   void dispose() {
     widget.controller.liveVoiceRunning.removeListener(_onRunningChanged);
     widget.controller.liveVoiceSpeaking.removeListener(_onSpeakingChanged);
+    widget.controller.liveVoiceTurns.removeListener(_onTurnsChanged);
+    _scroll.dispose();
     _pulse.dispose();
     super.dispose();
   }
@@ -109,6 +122,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (!widget.controller.liveVoiceRunning.value && mounted) {
       Navigator.of(context).pop();
     }
+  }
+
+  /// Follows the conversation down. After the frame, because the text that
+  /// just arrived has not been laid out yet and the extent to scroll to does
+  /// not exist until it has.
+  void _onTurnsChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   void _onSpeakingChanged() {
@@ -140,87 +167,33 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
             ),
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ScaleTransition(
-                    scale: _pulse,
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            theme.colorScheme.primaryContainer,
-                            theme.colorScheme.primary,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: controller.liveVoiceMuted,
-                    builder: (context, muted, _) =>
-                        ValueListenableBuilder<bool>(
-                          valueListenable: controller.liveVoiceSpeaking,
-                          builder: (context, speaking, _) => Text(
+              child: ValueListenableBuilder<List<VoiceTurn>>(
+                valueListenable: controller.liveVoiceTurns,
+                builder: (context, turns, _) => turns.isEmpty
+                    ? Center(
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: controller.liveVoiceMuted,
+                          builder: (context, muted, _) => Text(
                             muted
                                 ? l10n.voiceModeMuted
-                                : speaking
-                                ? l10n.voiceModeSpeaking
                                 : l10n.voiceModeListening,
                             style: theme.textTheme.bodyLarge?.copyWith(
                               color: theme.colorScheme.secondary,
                             ),
                           ),
                         ),
-                  ),
-                ],
+                      )
+                    : ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        itemCount: turns.length,
+                        itemBuilder: (context, i) => _VoiceTurnView(turns[i]),
+                      ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ValueListenableBuilder<String>(
-                    valueListenable: controller.liveVoiceTranscript,
-                    builder: (context, text, _) => text.isEmpty
-                        ? const SizedBox.shrink()
-                        : Text(
-                            text,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                  ValueListenableBuilder<String>(
-                    valueListenable: controller.liveVoiceReply,
-                    builder: (context, text, _) => text.isEmpty
-                        ? const SizedBox.shrink()
-                        : Text(
-                            text,
-                            style: theme.textTheme.bodyMedium,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(32.0),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   ValueListenableBuilder<bool>(
                     valueListenable: controller.liveVoiceMuted,
@@ -241,6 +214,35 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       icon: Icon(muted ? Icons.mic_off : Icons.mic_none),
                     ),
                   ),
+                  // The mic stands in the middle as the thing the screen is
+                  // about, pulsing while the assistant holds the floor.
+                  Expanded(
+                    child: Center(
+                      child: ScaleTransition(
+                        scale: _pulse,
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                theme.colorScheme.primaryContainer,
+                                theme.colorScheme.primary,
+                              ],
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.mic_none,
+                            color: theme.colorScheme.onPrimary,
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   IconButton(
                     tooltip: l10n.stopLiveVoice,
                     onPressed: controller.toggleLiveVoice,
@@ -252,6 +254,70 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     icon: const Icon(Icons.close),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One turn in the live conversation.
+///
+/// The two sides read differently on purpose. What the user said is a short
+/// quoted thing and sits in a bubble; what the assistant is saying is the
+/// content of the screen and gets the room to be read at speaking pace, with
+/// the words already out of the speaker at full contrast and the ones still
+/// queued behind them dimmed.
+class _VoiceTurnView extends StatelessWidget {
+  final VoiceTurn turn;
+
+  const _VoiceTurnView(this.turn);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (turn.fromUser) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 20, bottom: 4, left: 32),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              turn.text,
+              style: theme.textTheme.titleMedium?.copyWith(
+                // A turn still being transcribed is provisional: the
+                // endpointer can still revise it, and it should not read as
+                // settled until it has.
+                color: turn.done
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final spoken = theme.textTheme.headlineSmall?.copyWith(
+      color: theme.colorScheme.onSurface,
+      height: 1.4,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 4),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: turn.spoken, style: spoken),
+            TextSpan(
+              text: turn.pending,
+              style: spoken?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
               ),
             ),
           ],

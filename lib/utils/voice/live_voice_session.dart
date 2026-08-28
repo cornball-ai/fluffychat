@@ -10,6 +10,7 @@ import 'package:matrix/matrix.dart' show Logs;
 import 'chunk_playback.dart';
 import 'heard_offset_ledger.dart';
 import 'pcm_capture.dart';
+import 'pcm_gain.dart';
 import 'pcm_sink.dart';
 import 'self_echo_filter.dart';
 import 'speech_energy.dart';
@@ -24,7 +25,20 @@ class LiveVoiceCallbacks {
   final void Function(String text) onTranscript;
 
   /// The assistant's reply text so far this turn, growing delta by delta.
+  ///
+  /// This runs ahead of the speaker: generation and synthesis are streams,
+  /// so text arrives before it is spoken. [onSpoken] is what says how far
+  /// the voice has actually got.
   final void Function(String text) onReply;
+
+  /// The part of the reply that counts as spoken, as a prefix of the text
+  /// [onReply] last delivered.
+  ///
+  /// Fired as each chunk crosses the same threshold that decides what a
+  /// barge-in reports as heard -- its midpoint, not its start -- so what a
+  /// reader sees marked as said and what the agent is told was heard cannot
+  /// drift apart.
+  final void Function(String text) onSpoken;
 
   /// A turn finished; [storedText] is what the agent kept after truncation,
   /// which is what belongs in the room history the UI shows.
@@ -50,6 +64,7 @@ class LiveVoiceCallbacks {
   const LiveVoiceCallbacks({
     required this.onTranscript,
     required this.onReply,
+    required this.onSpoken,
     required this.onTurnStored,
     required this.onUserTurn,
     required this.onEnded,
@@ -351,12 +366,11 @@ class LiveVoiceSession {
           onReplyText: _callbacks.onReply,
           onStored: _callbacks.onTurnStored,
           onError: _fail,
-          // Every chunk onset re-primes the detector: the frames while a
-          // chunk starts are the speaker's own voice arriving at the mic,
-          // and they teach the noise floor instead of firing it.
-          // What the speaker has actually reached, as it reaches it: the
-          // only text the microphone can be echoing back.
-          onAudibleText: _echoFilter.audibleText,
+          // What the speaker has begun putting out: the only text the
+          // microphone can be echoing back.
+          onEmittedText: _echoFilter.audibleText,
+          // What counts as heard, by the same rule the report uses.
+          onHeardText: _callbacks.onSpoken,
         );
         _reply = reply;
         _bargeIn.reset();
@@ -398,7 +412,21 @@ class _ReplyTurn {
   final void Function(String) onReplyText;
   final void Function(String) onStored;
   final void Function(Object) onError;
-  final void Function(String) onAudibleText;
+
+  /// Text the speaker has begun emitting -- everything the microphone could
+  /// currently be echoing back, the chunk in flight included.
+  final void Function(String) onEmittedText;
+
+  /// Text that counts as heard, on the same rule the truncation report uses:
+  /// a chunk lands when it passes its own midpoint, not when it starts.
+  ///
+  /// Separate from [onEmittedText] deliberately. Echo detection wants the
+  /// optimistic answer, because sound already leaving the speaker can arrive
+  /// back at the microphone long before that chunk is halfway through.
+  /// Anything shown to a reader or told to the agent wants the counted one,
+  /// or a cut at a third of the way into a chunk leaves the screen showing a
+  /// sentence as said that the report is about to exclude.
+  final void Function(String) onHeardText;
 
   _ReplyTurn({
     required this.transport,
@@ -407,11 +435,15 @@ class _ReplyTurn {
     required this.onReplyText,
     required this.onStored,
     required this.onError,
-    required this.onAudibleText,
+    required this.onEmittedText,
+    required this.onHeardText,
   });
 
   final HeardOffsetLedger _ledger = HeardOffsetLedger();
   final ChunkPlayback _playback = ChunkPlayback();
+
+  /// Per reply, so one loud turn cannot set the level for the next.
+  final SpeechGain _gain = SpeechGain();
 
   /// (segment, inputTextEnd) for every chunk in the order playback STARTS
   /// them -- the list ChunkPlayback's count indexes into. Appended in the
@@ -539,22 +571,58 @@ class _ReplyTurn {
     _playQueue = _playQueue.then((_) async {
       if (_cut) return;
       _chunkOffsets.add((segmentIndex, inputTextEnd));
-      // This chunk is about to be heard, so everything up to its text
-      // boundary counts as audible from now on.
-      final audible = _ledger.globalOffset(segmentIndex, inputTextEnd);
-      final full = _replyText.toString();
-      final runes = full.runes.toList();
-      onAudibleText(
-        String.fromCharCodes(runes.sublist(0, audible.clamp(0, runes.length))),
-      );
+      // Sound is about to leave the speaker, so from here the microphone
+      // could be hearing us say everything up to this chunk's boundary.
+      final textUpToHere = _textThrough(segmentIndex, inputTextEnd);
+      onEmittedText(textUpToHere);
+      // Level, then play. The gain reads the chunk before the speaker does,
+      // so the peak it corrects for is one it has already seen.
+      final applied = _gain.apply(pcm);
+      if (index == 0) {
+        Logs().v(
+          'Live voice: reply peaks at ${_gain.peakDbfs?.toStringAsFixed(1)} '
+          'dBFS, playing at ${applied.toStringAsFixed(2)}x',
+        );
+      }
+      // Whether this chunk counts as heard is ChunkPlayback's rule, not a
+      // second one written here: watch its count and report the text the
+      // moment the count moves, so the screen and the report cross the same
+      // boundary at the same instant.
+      final heardBefore = _playback.chunksHeard;
+      var reported = false;
+      void reportIfHeard() {
+        if (reported || _cut) return;
+        if (_playback.chunksHeard <= heardBefore) return;
+        reported = true;
+        onHeardText(textUpToHere);
+      }
+
       _playback.startChunk(index, duration);
       final played = await sink.play(
         pcm,
         sampleRateHz: sampleRateHz,
-        onProgress: _playback.progress,
+        onProgress: (elapsed) {
+          _playback.progress(elapsed);
+          reportIfHeard();
+        },
       );
-      if (played && !_cut) _playback.completeChunk();
+      if (played && !_cut) {
+        _playback.completeChunk();
+        // A chunk short enough that no progress arrived past its midpoint
+        // still played in full.
+        reportIfHeard();
+      }
     });
+  }
+
+  /// The reply text up to a chunk's boundary, sliced by code point because
+  /// that is the ruler the wire offsets use.
+  String _textThrough(int segmentIndex, int inputTextEnd) {
+    final boundary = _ledger.globalOffset(segmentIndex, inputTextEnd);
+    final runes = _replyText.toString().runes.toList();
+    return String.fromCharCodes(
+      runes.sublist(0, boundary.clamp(0, runes.length)),
+    );
   }
 
   /// Cut order is the contract: stop generation, stop synthesis, stop the
@@ -570,12 +638,25 @@ class _ReplyTurn {
     _ttsSubscription = null;
     await sink.cancel();
     final heardChunks = _playback.truncate();
-    final textHeard = heardChunks == 0
+    final heard = heardChunks == 0 ? null : _chunkOffsets[heardChunks - 1];
+    final textHeard = heard == null
         ? 0
-        : () {
-            final (segment, inputTextEnd) = _chunkOffsets[heardChunks - 1];
-            return _ledger.globalOffset(segment, inputTextEnd);
-          }();
+        : _ledger.globalOffset(heard.$1, heard.$2);
+    // The final boundary, published from the same pair the report carries.
+    //
+    // Live updates stop the moment _cut is set, but the speaker does not
+    // stop until three awaits later -- two subscription cancellations and
+    // the sink's own -- and playback keeps ticking through them. A chunk
+    // that crosses its midpoint in that window is counted by truncate()
+    // above and would never have reached the screen, leaving it short of
+    // what the agent is being told was heard. This closes that window from
+    // the settled side, so the last word either of them has is the same one.
+    //
+    // Only when something was heard. Nothing heard is where every reply
+    // starts, so announcing it says nothing -- and a turn cut before its
+    // first delta has no text for the empty string to be a prefix OF, which
+    // makes it a claim about a turn that never began.
+    if (heard != null) onHeardText(_textThrough(heard.$1, heard.$2));
     await _report(result, textHeard);
   }
 

@@ -19,19 +19,28 @@ class UnreadRoomsBadge extends StatelessWidget {
   /// own unreads.
   final Client? client;
 
+  /// Several accounts at once, for a badge over something that spans them --
+  /// the unified inbox's "all chats", where counting the active account only
+  /// leaves out the rooms the list is showing. Takes precedence over
+  /// [client].
+  final List<Client>? clients;
+
   const UnreadRoomsBadge({
     super.key,
     required this.filter,
     this.badgePosition,
     this.child,
     this.client,
+    this.clients,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final unreadCount = (client ?? Matrix.of(context).client).rooms
+    final counted = clients ?? [client ?? Matrix.of(context).client];
+    final unreadCount = counted
+        .expand((client) => client.rooms)
         .where(filter)
         .where((r) => (r.isUnread || r.membership == Membership.invite))
         .length;

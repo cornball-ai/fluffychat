@@ -54,12 +54,18 @@ class _ScriptedBargeIn extends BargeInDetector {
 /// below 1.0 hangs the chunk (reporting its progress) until cancel.
 class _FakeSink implements PcmSink {
   final List<double> fractions;
-  _FakeSink(this.fractions);
+
+  /// Ticks progress to the end of the chunk when cancelled, the way a real
+  /// player keeps playing while a cut is being arranged around it.
+  final bool progressOnCancel;
+
+  _FakeSink(this.fractions, {this.progressOnCancel = false});
 
   final playedChunks = <Uint8List>[];
   int cancels = 0;
   bool disposed = false;
   Completer<bool>? _hanging;
+  void Function(Duration elapsed)? _onProgress;
 
   @override
   Future<bool> play(
@@ -68,6 +74,7 @@ class _FakeSink implements PcmSink {
     void Function(Duration elapsed)? onProgress,
   }) {
     playedChunks.add(pcm);
+    _onProgress = onProgress;
     final fraction = fractions[playedChunks.length - 1];
     // The session passes the chunk's announced duration through startChunk;
     // the sink only knows bytes, so scripted duration = 1s for simplicity.
@@ -82,6 +89,7 @@ class _FakeSink implements PcmSink {
   @override
   Future<void> cancel() async {
     cancels++;
+    if (progressOnCancel) _onProgress?.call(const Duration(seconds: 1));
     _hanging?.complete(false);
     _hanging = null;
   }
@@ -178,13 +186,18 @@ class _Harness {
   final _FakeSink sink;
   final transcripts = <String>[];
   final replies = <String>[];
+
+  /// What the session says has left the speaker, in the order it said it.
+  final spoken = <String>[];
   final stored = <String>[];
   final userTurns = <String>[];
   final ended = <Object?>[];
   late final LiveVoiceSession session;
 
-  _Harness({List<double> sinkFractions = const [1.0, 1.0, 1.0, 1.0]})
-    : sink = _FakeSink(sinkFractions) {
+  _Harness({
+    List<double> sinkFractions = const [1.0, 1.0, 1.0, 1.0],
+    bool progressOnCancel = false,
+  }) : sink = _FakeSink(sinkFractions, progressOnCancel: progressOnCancel) {
     session = LiveVoiceSession(
       transport: transport,
       capture: PcmCapture(recorder: recorder),
@@ -195,6 +208,7 @@ class _Harness {
       callbacks: LiveVoiceCallbacks(
         onTranscript: transcripts.add,
         onReply: replies.add,
+        onSpoken: spoken.add,
         onTurnStored: stored.add,
         onUserTurn: userTurns.add,
         onEnded: ended.add,
@@ -240,6 +254,32 @@ void main() {
     },
   );
 
+  test('what has been spoken is reported as a growing prefix', () async {
+    // The screen draws the reply in two colours off this, and an
+    // interruption reports the same boundary as heard. If it were not a
+    // prefix of the reply text, one of the two would be describing audio
+    // that was never played.
+    final harness = _Harness();
+    harness.transport.replyDeltas = ['Hello there. ', 'General Kenobi.'];
+    await harness.start();
+
+    await harness.speak('hi there');
+
+    expect(harness.spoken, isNotEmpty);
+    for (final prefix in harness.spoken) {
+      expect(harness.replies.last, startsWith(prefix));
+    }
+    // Monotonic: a chunk cannot un-say what an earlier one said.
+    for (var i = 1; i < harness.spoken.length; i++) {
+      expect(
+        harness.spoken[i].length,
+        greaterThanOrEqualTo(harness.spoken[i - 1].length),
+      );
+    }
+    // The last chunk to start playing carries the reply to its end.
+    expect(harness.spoken.last, harness.replies.last);
+  });
+
   test('provisional transcripts replace; stable ones append', () async {
     final harness = _Harness();
     await harness.start();
@@ -281,6 +321,10 @@ void main() {
       await harness.start();
       await harness.speak('hi');
 
+      // Snapshotted here because the interrupting turn starts a reply of its
+      // own that reports its own spoken text into the same list.
+      final spokenAtCut = [...harness.spoken];
+
       // The reply is mid-playback; the user says something of their own.
       harness.transport.emitStt(
         const SttTranscript('actually never mind that', stable: true),
@@ -292,6 +336,10 @@ void main() {
       expect(report.result, TurnResult.bargeIn);
       // Heard through the first segment only.
       expect(report.textHeard, 'Hello there. '.runes.length);
+      // And the screen was never told otherwise. A chunk stopped at 40% has
+      // not been heard by the rule the report uses, so marking its text as
+      // spoken would show the reader the very sentence this report excludes.
+      expect(spokenAtCut.last, 'Hello there. ');
       expect(harness.sink.cancels, greaterThan(0));
       expect(harness.session.replying, isFalse);
       // The session survives a barge-in; only the turn died.
@@ -306,6 +354,10 @@ void main() {
     await harness.start();
     await harness.speak('hi');
 
+    // Before the interrupting turn starts a reply of its own and reports
+    // into the same list.
+    final spokenAtCut = [...harness.spoken];
+
     harness.transport.emitStt(
       const SttTranscript('stop go back please', stable: true),
     );
@@ -315,6 +367,49 @@ void main() {
     final report = harness.transport.reports.first;
     expect(report.result, TurnResult.bargeIn);
     expect(report.textHeard, 0);
+    // Nothing counted as heard, so nothing was ever marked as said. The
+    // screen and the report agree on zero.
+    expect(spokenAtCut, isEmpty);
+  });
+
+  test('a chunk that lands during the cut still reaches the screen', () async {
+    // Live updates stop the instant the cut begins, but the speaker plays on
+    // through two subscription cancellations before the sink is told to
+    // stop. A chunk that passes its midpoint in that window is counted by
+    // the report, and the screen has to hear about it too -- otherwise it
+    // shows less than the agent is being told was heard, the same
+    // disagreement as before with the sign flipped.
+    final harness = _Harness(sinkFractions: [0.4], progressOnCancel: true);
+    harness.transport.replyDeltas = ['One single sentence here.'];
+    await harness.start();
+    await harness.speak('hi');
+
+    // Stop rather than barge in: an interruption starts a reply of its own,
+    // and this has to be the last word about *this* one.
+    await harness.session.stop();
+
+    final report = harness.transport.reports.single;
+    expect(report.result, TurnResult.abandoned);
+    expect(report.textHeard, 'One single sentence here.'.runes.length);
+    expect(harness.spoken.last, 'One single sentence here.');
+  });
+
+  test('nothing heard publishes nothing, not an empty prefix', () async {
+    // The consumer builds turns out of these callbacks, so an empty string
+    // has to mean nothing rather than something. A reply cut before its
+    // first chunk landed has no text for an empty prefix to be a prefix OF,
+    // and a consumer that took it as a turn would be left holding one that
+    // nothing ever finishes -- a reply cut before ReplyStart never reports,
+    // so no stored text arrives to close it.
+    final harness = _Harness(sinkFractions: [0.1]);
+    harness.transport.replyDeltas = ['One single sentence here.'];
+    await harness.start();
+    await harness.speak('hi');
+
+    await harness.session.stop();
+
+    expect(harness.transport.reports.single.textHeard, 0);
+    expect(harness.spoken, isEmpty);
   });
 
   test('muted frames reach neither the wire nor barge-in', () async {
@@ -414,6 +509,7 @@ void main() {
         callbacks: LiveVoiceCallbacks(
           onTranscript: (_) {},
           onReply: (_) {},
+          onSpoken: (_) {},
           onTurnStored: (_) {},
           onUserTurn: (_) {},
           onEnded: ended.add,
