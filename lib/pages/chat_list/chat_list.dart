@@ -308,24 +308,36 @@ class ChatListController extends State<ChatList>
         isSearching = true;
       });
     }
-    final searchQuery = searchController.text.trim();
+    // Read once, here, and carried through every request this fan-out makes.
+    // Reading the controller again inside a request means one invocation can
+    // come back with rooms for what was typed then and people for what is
+    // typed now.
+    final query = searchController.text;
+    // Typing again supersedes this search. Without the check the slower of
+    // two overlapping fan-outs publishes last, whichever one the user is
+    // actually waiting for.
+    final generation = ++_searchGeneration;
+
     // Every account searches at once, but they are merged afterwards in the
     // order the accounts were ASKED, not the order they answered. Merging
     // inside the futures gives a room both accounts can see to whichever
     // homeserver replied first, so which account it opens on would come down
     // to the network.
     final answers = await Future.wait(
-      clients.map((client) => _searchOneAccount(client, searchQuery, server)),
+      clients.map((client) => _searchOneAccount(client, query, server)),
     );
-    if (!isSearchMode || !mounted) return;
+    if (!isSearchMode || !mounted || generation != _searchGeneration) return;
 
     final rooms = <String, ({PublishedRoomsChunk chunk, Client client})>{};
     final users = <String, ({Profile profile, Client client})>{};
+    Object? lastError;
     var failed = 0;
     for (var i = 0; i < clients.length; i++) {
       final answer = answers[i];
-      if (answer == null) {
+      final error = answer.error;
+      if (error != null) {
         failed++;
+        lastError = error;
         continue;
       }
       // Keyed, so a room or a person both accounts can see appears once,
@@ -343,8 +355,6 @@ class ChatListController extends State<ChatList>
         );
       }
     }
-    final lastError = _lastSearchError;
-    _lastSearchError = null;
     // Only when nothing at all came back is there nothing to show but the
     // error.
     if (failed == clients.length && lastError != null) {
@@ -363,47 +373,50 @@ class ChatListController extends State<ChatList>
     });
   }
 
-  Object? _lastSearchError;
+  /// Bumped by every search, so a fan-out that finishes after a newer one
+  /// started can tell that it did and keep its results to itself.
+  int _searchGeneration = 0;
 
-  /// One account's two directories, or null when its homeserver could not
-  /// answer -- one account failing is no reason to throw away what the others
-  /// found.
-  Future<({List<PublishedRoomsChunk> rooms, List<Profile> users})?>
-  _searchOneAccount(Client client, String searchQuery, String? server) async {
+  /// One account's two directories, or the reason it could not answer -- one
+  /// account failing is no reason to throw away what the others found.
+  ///
+  /// [query] is the whole search: nothing in here reads the text field, which
+  /// has moved on by the time the second request goes out.
+  Future<
+    ({List<PublishedRoomsChunk> rooms, List<Profile> users, Object? error})
+  >
+  _searchOneAccount(Client client, String query, String? server) async {
+    final trimmed = query.trim();
     try {
       final found = await client.queryPublicRooms(
         server: server,
-        filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
+        filter: PublicRoomQueryFilter(genericSearchTerm: trimmed),
         limit: 20,
       );
       final chunks = [...found.chunk];
-      if (searchQuery.isValidMatrixIdStrict() &&
-          searchQuery.sigil == '#' &&
-          chunks.any((room) => room.canonicalAlias == searchQuery) == false) {
-        final response = await client.getRoomIdByAlias(searchQuery);
+      if (trimmed.isValidMatrixIdStrict() &&
+          trimmed.sigil == '#' &&
+          chunks.any((room) => room.canonicalAlias == trimmed) == false) {
+        final response = await client.getRoomIdByAlias(trimmed);
         final roomId = response.roomId;
         if (roomId != null) {
           chunks.add(
             PublishedRoomsChunk(
-              name: searchQuery,
+              name: trimmed,
               guestCanJoin: false,
               numJoinedMembers: 0,
               roomId: roomId,
               worldReadable: false,
-              canonicalAlias: searchQuery,
+              canonicalAlias: trimmed,
             ),
           );
         }
       }
-      final directory = await client.searchUserDirectory(
-        searchController.text,
-        limit: 20,
-      );
-      return (rooms: chunks, users: directory.results);
+      final directory = await client.searchUserDirectory(query, limit: 20);
+      return (rooms: chunks, users: directory.results, error: null);
     } catch (e, s) {
       Logs().w('Searching ${client.userID} has crashed', e, s);
-      _lastSearchError = e;
-      return null;
+      return (rooms: <PublishedRoomsChunk>[], users: <Profile>[], error: e);
     }
   }
 

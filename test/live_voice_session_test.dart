@@ -54,12 +54,18 @@ class _ScriptedBargeIn extends BargeInDetector {
 /// below 1.0 hangs the chunk (reporting its progress) until cancel.
 class _FakeSink implements PcmSink {
   final List<double> fractions;
-  _FakeSink(this.fractions);
+
+  /// Ticks progress to the end of the chunk when cancelled, the way a real
+  /// player keeps playing while a cut is being arranged around it.
+  final bool progressOnCancel;
+
+  _FakeSink(this.fractions, {this.progressOnCancel = false});
 
   final playedChunks = <Uint8List>[];
   int cancels = 0;
   bool disposed = false;
   Completer<bool>? _hanging;
+  void Function(Duration elapsed)? _onProgress;
 
   @override
   Future<bool> play(
@@ -68,6 +74,7 @@ class _FakeSink implements PcmSink {
     void Function(Duration elapsed)? onProgress,
   }) {
     playedChunks.add(pcm);
+    _onProgress = onProgress;
     final fraction = fractions[playedChunks.length - 1];
     // The session passes the chunk's announced duration through startChunk;
     // the sink only knows bytes, so scripted duration = 1s for simplicity.
@@ -82,6 +89,7 @@ class _FakeSink implements PcmSink {
   @override
   Future<void> cancel() async {
     cancels++;
+    if (progressOnCancel) _onProgress?.call(const Duration(seconds: 1));
     _hanging?.complete(false);
     _hanging = null;
   }
@@ -186,8 +194,10 @@ class _Harness {
   final ended = <Object?>[];
   late final LiveVoiceSession session;
 
-  _Harness({List<double> sinkFractions = const [1.0, 1.0, 1.0, 1.0]})
-    : sink = _FakeSink(sinkFractions) {
+  _Harness({
+    List<double> sinkFractions = const [1.0, 1.0, 1.0, 1.0],
+    bool progressOnCancel = false,
+  }) : sink = _FakeSink(sinkFractions, progressOnCancel: progressOnCancel) {
     session = LiveVoiceSession(
       transport: transport,
       capture: PcmCapture(recorder: recorder),
@@ -360,6 +370,28 @@ void main() {
     // Nothing counted as heard, so nothing was ever marked as said. The
     // screen and the report agree on zero.
     expect(spokenAtCut, isEmpty);
+  });
+
+  test('a chunk that lands during the cut still reaches the screen', () async {
+    // Live updates stop the instant the cut begins, but the speaker plays on
+    // through two subscription cancellations before the sink is told to
+    // stop. A chunk that passes its midpoint in that window is counted by
+    // the report, and the screen has to hear about it too -- otherwise it
+    // shows less than the agent is being told was heard, the same
+    // disagreement as before with the sign flipped.
+    final harness = _Harness(sinkFractions: [0.4], progressOnCancel: true);
+    harness.transport.replyDeltas = ['One single sentence here.'];
+    await harness.start();
+    await harness.speak('hi');
+
+    // Stop rather than barge in: an interruption starts a reply of its own,
+    // and this has to be the last word about *this* one.
+    await harness.session.stop();
+
+    final report = harness.transport.reports.single;
+    expect(report.result, TurnResult.abandoned);
+    expect(report.textHeard, 'One single sentence here.'.runes.length);
+    expect(harness.spoken.last, 'One single sentence here.');
   });
 
   test('muted frames reach neither the wire nor barge-in', () async {

@@ -638,12 +638,20 @@ class _ReplyTurn {
     _ttsSubscription = null;
     await sink.cancel();
     final heardChunks = _playback.truncate();
-    final textHeard = heardChunks == 0
+    final heard = heardChunks == 0 ? null : _chunkOffsets[heardChunks - 1];
+    final textHeard = heard == null
         ? 0
-        : () {
-            final (segment, inputTextEnd) = _chunkOffsets[heardChunks - 1];
-            return _ledger.globalOffset(segment, inputTextEnd);
-          }();
+        : _ledger.globalOffset(heard.$1, heard.$2);
+    // The final boundary, published from the same pair the report carries.
+    //
+    // Live updates stop the moment _cut is set, but the speaker does not
+    // stop until three awaits later -- two subscription cancellations and
+    // the sink's own -- and playback keeps ticking through them. A chunk
+    // that crosses its midpoint in that window is counted by truncate()
+    // above and would never have reached the screen, leaving it short of
+    // what the agent is being told was heard. This closes that window from
+    // the settled side, so the last word either of them has is the same one.
+    onHeardText(heard == null ? '' : _textThrough(heard.$1, heard.$2));
     await _report(result, textHeard);
   }
 
