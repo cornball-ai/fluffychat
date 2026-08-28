@@ -394,6 +394,24 @@ void main() {
     expect(harness.spoken.last, 'One single sentence here.');
   });
 
+  test('nothing heard publishes nothing, not an empty prefix', () async {
+    // The consumer builds turns out of these callbacks, so an empty string
+    // has to mean nothing rather than something. A reply cut before its
+    // first chunk landed has no text for an empty prefix to be a prefix OF,
+    // and a consumer that took it as a turn would be left holding one that
+    // nothing ever finishes -- a reply cut before ReplyStart never reports,
+    // so no stored text arrives to close it.
+    final harness = _Harness(sinkFractions: [0.1]);
+    harness.transport.replyDeltas = ['One single sentence here.'];
+    await harness.start();
+    await harness.speak('hi');
+
+    await harness.session.stop();
+
+    expect(harness.transport.reports.single.textHeard, 0);
+    expect(harness.spoken, isEmpty);
+  });
+
   test('muted frames reach neither the wire nor barge-in', () async {
     // The one chunk hangs at 40%, holding the reply open so barge-in stays
     // meaningful for the whole test.

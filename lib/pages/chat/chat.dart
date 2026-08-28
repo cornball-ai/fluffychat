@@ -775,10 +775,13 @@ class ChatController extends State<ChatPageWithRoom>
   /// settles that reply arrives after it. Judging by the tail alone would
   /// leave the interrupted reply unfinished forever and append its stored
   /// text again below the user's words, in the wrong order and twice.
+  /// [ifAbsent] null means this update can only ever modify a turn, never
+  /// start one -- for the signals that describe a turn rather than announce
+  /// it, and would otherwise conjure a turn nothing will ever finish.
   void _updateVoiceTurn({
     required bool Function(VoiceTurn) matches,
     required VoiceTurn Function(VoiceTurn) update,
-    required VoiceTurn Function() ifAbsent,
+    VoiceTurn Function()? ifAbsent,
   }) {
     final turns = [...liveVoiceTurns.value];
     for (var i = turns.length - 1; i >= 0; i--) {
@@ -787,6 +790,7 @@ class ChatController extends State<ChatPageWithRoom>
       liveVoiceTurns.value = turns;
       return;
     }
+    if (ifAbsent == null) return;
     liveVoiceTurns.value = [...turns, ifAbsent()];
   }
 
@@ -871,12 +875,13 @@ class ChatController extends State<ChatPageWithRoom>
             );
           },
           // How far the voice has got through the text above, so the words
-          // already said can be told from the ones still queued.
+          // already said can be told from the ones still queued. It marks a
+          // reply; it never starts one, because it says nothing about text
+          // no delta has delivered yet.
           onSpoken: (text) {
             _updateVoiceTurn(
               matches: (turn) => !turn.fromUser && !turn.done,
               update: (turn) => turn.withSpoken(text.length),
-              ifAbsent: () => VoiceTurn.agent(text, spokenLength: text.length),
             );
           },
           // The agent posts its stored reply into the room itself, so the

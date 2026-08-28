@@ -651,7 +651,12 @@ class _ReplyTurn {
     // above and would never have reached the screen, leaving it short of
     // what the agent is being told was heard. This closes that window from
     // the settled side, so the last word either of them has is the same one.
-    onHeardText(heard == null ? '' : _textThrough(heard.$1, heard.$2));
+    //
+    // Only when something was heard. Nothing heard is where every reply
+    // starts, so announcing it says nothing -- and a turn cut before its
+    // first delta has no text for the empty string to be a prefix OF, which
+    // makes it a claim about a turn that never began.
+    if (heard != null) onHeardText(_textThrough(heard.$1, heard.$2));
     await _report(result, textHeard);
   }
 
