@@ -577,13 +577,12 @@ class _ReplyTurn {
       onEmittedText(textUpToHere);
       // Level, then play. The gain reads the chunk before the speaker does,
       // so the peak it corrects for is one it has already seen.
-      final applied = _gain.apply(pcm);
-      if (index == 0) {
-        Logs().v(
-          'Live voice: reply peaks at ${_gain.peakDbfs?.toStringAsFixed(1)} '
-          'dBFS, playing at ${applied.toStringAsFixed(2)}x',
-        );
-      }
+      final applied = _gain.apply(pcm, sampleRateHz: sampleRateHz);
+      Logs().v(
+        'Live voice: chunk $index at ${_gain.rmsDbfs?.toStringAsFixed(1)} dBFS '
+        'RMS, peak ${_gain.peakDbfs?.toStringAsFixed(1)} dBFS, '
+        'playing at ${applied.toStringAsFixed(2)}x',
+      );
       // Whether this chunk counts as heard is ChunkPlayback's rule, not a
       // second one written here: watch its count and report the text the
       // moment the count moves, so the screen and the report cross the same
