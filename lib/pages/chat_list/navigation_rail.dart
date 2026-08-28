@@ -25,11 +25,16 @@ class SpacesNavigationRail extends StatelessWidget {
   /// logged in, the rail leads with one avatar per account.
   final void Function(Client client)? onSwitchClient;
 
+  /// The accounts whose rooms "all chats" leads to, so its badge counts the
+  /// same set. Null means the active account, as it always did.
+  final List<Client>? allChatsClients;
+
   const SpacesNavigationRail({
     required this.activeSpaceId,
     required this.onGoToChats,
     required this.onGoToSpaceId,
     this.onSwitchClient,
+    this.allChatsClients,
     super.key,
   });
 
@@ -119,6 +124,11 @@ class SpacesNavigationRail extends StatelessWidget {
                           return NaviRailItem(
                             isSelected: activeSpaceId == null,
                             onTap: onGoToChats,
+                            // What "all chats" opens is what it counts. In
+                            // the unified inbox that is every account, and
+                            // counting the active one would report fewer
+                            // unreads than the list it leads to shows.
+                            badgeClients: allChatsClients,
                             icon: const Padding(
                               padding: EdgeInsets.all(12.0),
                               child: Icon(Icons.forum_outlined),
