@@ -35,6 +35,7 @@ import 'package:fluffychat/utils/read_marker_target.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/voice/live_voice_platform.dart';
 import 'package:fluffychat/utils/voice/live_voice_session.dart';
+import 'package:fluffychat/utils/voice/voice_turn.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -753,6 +754,39 @@ class ChatController extends State<ChatPageWithRoom>
   final ValueNotifier<String> liveVoiceTranscript = ValueNotifier('');
   final ValueNotifier<String> liveVoiceReply = ValueNotifier('');
 
+  /// The conversation so far, oldest first, for a surface that shows it
+  /// rather than announcing a state.
+  ///
+  /// Held here and not read back out of the room: the agent posts its replies
+  /// and the client posts the user's turns, but both arrive over federation
+  /// on their own schedule, and a spoken conversation cannot wait for a sync
+  /// to show the words it is saying right now.
+  final ValueNotifier<List<VoiceTurn>> liveVoiceTurns = ValueNotifier(
+    const <VoiceTurn>[],
+  );
+
+  void _appendVoiceTurn(VoiceTurn turn) =>
+      liveVoiceTurns.value = [...liveVoiceTurns.value, turn];
+
+  /// Replaces the last turn when [matches] accepts it, appends [ifAbsent]
+  /// otherwise -- the shape every live update has: grow the turn in progress,
+  /// or start one.
+  void _updateVoiceTurn({
+    required bool Function(VoiceTurn) matches,
+    required VoiceTurn Function(VoiceTurn) update,
+    required VoiceTurn Function() ifAbsent,
+  }) {
+    final turns = liveVoiceTurns.value;
+    if (turns.isNotEmpty && matches(turns.last)) {
+      liveVoiceTurns.value = [
+        ...turns.take(turns.length - 1),
+        update(turns.last),
+      ];
+      return;
+    }
+    _appendVoiceTurn(ifAbsent());
+  }
+
   /// Session lifecycle for the voice-mode screen: flips true when a session
   /// starts and false however it ends, which is the screen's one signal to
   /// dismiss itself -- user stop, session error, and room dispose all
@@ -798,16 +832,47 @@ class ChatController extends State<ChatPageWithRoom>
         openIdToken: openId.accessToken,
         matrixServerName: openId.matrixServerName,
         callbacks: LiveVoiceCallbacks(
-          onTranscript: (text) => liveVoiceTranscript.value = text,
+          onTranscript: (text) {
+            liveVoiceTranscript.value = text;
+            // The turn being dictated, growing in place. It is provisional
+            // until the endpointer says otherwise, so it replaces itself
+            // rather than accumulating.
+            if (text.isEmpty) return;
+            _updateVoiceTurn(
+              matches: (turn) => turn.fromUser && !turn.done,
+              update: (turn) => turn.withText(text),
+              ifAbsent: () => VoiceTurn.user(text),
+            );
+          },
           onReply: (text) {
             liveVoiceReply.value = text;
             liveVoiceSpeaking.value = true;
+            _updateVoiceTurn(
+              matches: (turn) => !turn.fromUser && !turn.done,
+              update: (turn) => turn.withText(text),
+              ifAbsent: () => VoiceTurn.agent(text),
+            );
+          },
+          // How far the voice has got through the text above, so the words
+          // already said can be told from the ones still queued.
+          onSpoken: (text) {
+            _updateVoiceTurn(
+              matches: (turn) => !turn.fromUser && !turn.done,
+              update: (turn) => turn.withSpoken(text.length),
+              ifAbsent: () => VoiceTurn.agent(text, spokenLength: text.length),
+            );
           },
           // The agent posts its stored reply into the room itself, so the
-          // timeline is the durable rendering; the local surface only needs
-          // to know the speaking window closed.
-          onTurnStored: (_) {
+          // timeline is the durable rendering; here the turn just stops
+          // growing, at the text the agent kept -- which for an interrupted
+          // reply is the part that was actually said.
+          onTurnStored: (storedText) {
             liveVoiceSpeaking.value = false;
+            _updateVoiceTurn(
+              matches: (turn) => !turn.fromUser && !turn.done,
+              update: (turn) => turn.finished(storedText),
+              ifAbsent: () => VoiceTurn.agent(storedText).finished(storedText),
+            );
           },
           // The user's spoken words, posted from their own account exactly
           // as a typed message would be -- the agent authors its replies,
@@ -816,6 +881,11 @@ class ChatController extends State<ChatPageWithRoom>
           // the turn, and a failed post must not take the conversation
           // down with it.
           onUserTurn: (text) {
+            _updateVoiceTurn(
+              matches: (turn) => turn.fromUser && !turn.done,
+              update: (turn) => turn.finished(text),
+              ifAbsent: () => VoiceTurn.user(text).finished(text),
+            );
             room.sendTextEvent(text).catchError((Object error) {
               Logs().w('Live voice: failed to post spoken turn', error);
               return null;
@@ -829,6 +899,7 @@ class ChatController extends State<ChatPageWithRoom>
             if (mounted) {
               liveVoiceTranscript.value = '';
               liveVoiceReply.value = '';
+              liveVoiceTurns.value = const <VoiceTurn>[];
               liveVoiceSpeaking.value = false;
               liveVoiceMuted.value = false;
               liveVoiceRunning.value = false;
@@ -882,6 +953,7 @@ class ChatController extends State<ChatPageWithRoom>
     unawaited(_liveVoice?.stop());
     liveVoiceTranscript.dispose();
     liveVoiceReply.dispose();
+    liveVoiceTurns.dispose();
     liveVoiceRunning.dispose();
     liveVoiceSpeaking.dispose();
     liveVoiceMuted.dispose();

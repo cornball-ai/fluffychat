@@ -10,6 +10,7 @@ import 'package:matrix/matrix.dart' show Logs;
 import 'chunk_playback.dart';
 import 'heard_offset_ledger.dart';
 import 'pcm_capture.dart';
+import 'pcm_gain.dart';
 import 'pcm_sink.dart';
 import 'self_echo_filter.dart';
 import 'speech_energy.dart';
@@ -24,7 +25,19 @@ class LiveVoiceCallbacks {
   final void Function(String text) onTranscript;
 
   /// The assistant's reply text so far this turn, growing delta by delta.
+  ///
+  /// This runs ahead of the speaker: generation and synthesis are streams,
+  /// so text arrives before it is spoken. [onSpoken] is what says how far
+  /// the voice has actually got.
   final void Function(String text) onReply;
+
+  /// The part of the reply that has been spoken, as a prefix of the text
+  /// [onReply] last delivered.
+  ///
+  /// Fired as each chunk starts playing, from the same offsets that decide
+  /// what a barge-in reports as heard -- so what a reader sees marked as
+  /// said and what the agent is told was heard cannot drift apart.
+  final void Function(String text) onSpoken;
 
   /// A turn finished; [storedText] is what the agent kept after truncation,
   /// which is what belongs in the room history the UI shows.
@@ -50,6 +63,7 @@ class LiveVoiceCallbacks {
   const LiveVoiceCallbacks({
     required this.onTranscript,
     required this.onReply,
+    required this.onSpoken,
     required this.onTurnStored,
     required this.onUserTurn,
     required this.onEnded,
@@ -351,12 +365,13 @@ class LiveVoiceSession {
           onReplyText: _callbacks.onReply,
           onStored: _callbacks.onTurnStored,
           onError: _fail,
-          // Every chunk onset re-primes the detector: the frames while a
-          // chunk starts are the speaker's own voice arriving at the mic,
-          // and they teach the noise floor instead of firing it.
           // What the speaker has actually reached, as it reaches it: the
-          // only text the microphone can be echoing back.
-          onAudibleText: _echoFilter.audibleText,
+          // only text the microphone can be echoing back, and the same
+          // prefix a reader sees marked as already said.
+          onAudibleText: (text) {
+            _echoFilter.audibleText(text);
+            _callbacks.onSpoken(text);
+          },
         );
         _reply = reply;
         _bargeIn.reset();
@@ -412,6 +427,9 @@ class _ReplyTurn {
 
   final HeardOffsetLedger _ledger = HeardOffsetLedger();
   final ChunkPlayback _playback = ChunkPlayback();
+
+  /// Per reply, so one loud turn cannot set the level for the next.
+  final SpeechGain _gain = SpeechGain();
 
   /// (segment, inputTextEnd) for every chunk in the order playback STARTS
   /// them -- the list ChunkPlayback's count indexes into. Appended in the
@@ -547,6 +565,15 @@ class _ReplyTurn {
       onAudibleText(
         String.fromCharCodes(runes.sublist(0, audible.clamp(0, runes.length))),
       );
+      // Level, then play. The gain reads the chunk before the speaker does,
+      // so the peak it corrects for is one it has already seen.
+      final applied = _gain.apply(pcm);
+      if (index == 0) {
+        Logs().v(
+          'Live voice: reply peaks at ${_gain.peakDbfs?.toStringAsFixed(1)} '
+          'dBFS, playing at ${applied.toStringAsFixed(2)}x',
+        );
+      }
       _playback.startChunk(index, duration);
       final played = await sink.play(
         pcm,

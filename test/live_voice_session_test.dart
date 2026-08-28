@@ -178,6 +178,9 @@ class _Harness {
   final _FakeSink sink;
   final transcripts = <String>[];
   final replies = <String>[];
+
+  /// What the session says has left the speaker, in the order it said it.
+  final spoken = <String>[];
   final stored = <String>[];
   final userTurns = <String>[];
   final ended = <Object?>[];
@@ -195,6 +198,7 @@ class _Harness {
       callbacks: LiveVoiceCallbacks(
         onTranscript: transcripts.add,
         onReply: replies.add,
+        onSpoken: spoken.add,
         onTurnStored: stored.add,
         onUserTurn: userTurns.add,
         onEnded: ended.add,
@@ -239,6 +243,32 @@ void main() {
       expect(harness.ended, isEmpty);
     },
   );
+
+  test('what has been spoken is reported as a growing prefix', () async {
+    // The screen draws the reply in two colours off this, and an
+    // interruption reports the same boundary as heard. If it were not a
+    // prefix of the reply text, one of the two would be describing audio
+    // that was never played.
+    final harness = _Harness();
+    harness.transport.replyDeltas = ['Hello there. ', 'General Kenobi.'];
+    await harness.start();
+
+    await harness.speak('hi there');
+
+    expect(harness.spoken, isNotEmpty);
+    for (final prefix in harness.spoken) {
+      expect(harness.replies.last, startsWith(prefix));
+    }
+    // Monotonic: a chunk cannot un-say what an earlier one said.
+    for (var i = 1; i < harness.spoken.length; i++) {
+      expect(
+        harness.spoken[i].length,
+        greaterThanOrEqualTo(harness.spoken[i - 1].length),
+      );
+    }
+    // The last chunk to start playing carries the reply to its end.
+    expect(harness.spoken.last, harness.replies.last);
+  });
 
   test('provisional transcripts replace; stable ones append', () async {
     final harness = _Harness();
@@ -414,6 +444,7 @@ void main() {
         callbacks: LiveVoiceCallbacks(
           onTranscript: (_) {},
           onReply: (_) {},
+          onSpoken: (_) {},
           onTurnStored: (_) {},
           onUserTurn: (_) {},
           onEnded: ended.add,
