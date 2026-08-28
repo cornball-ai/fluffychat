@@ -2806,6 +2806,5 @@
     "unifiedInbox": "One chat list for all accounts",
     "unifiedInboxDescription": "Show every account's chats together, sorted by time. Spaces stay per account.",
     "voiceModeListening": "Listening…",
-    "voiceModeSpeaking": "Speaking…",
     "voiceModeMuted": "Muted"
 }

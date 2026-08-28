@@ -106,18 +106,20 @@ class ChatListController extends State<ChatList>
     });
   }
 
-  /// Makes the room's own account active, and reports whether it had to.
+  /// Makes [client] the active account, and reports whether it had to.
   ///
-  /// Every route that resolves a room id -- the chat page, the archive, the
-  /// ignore list -- looks it up on the active client, so a row from the other
-  /// account has to switch before it navigates or it opens on the wrong
-  /// account, or on nothing.
-  Client? _activateOwner(Room room) {
+  /// Every route and dialog that resolves an id -- the chat page, the
+  /// archive, the ignore list, the join dialog -- looks it up on the active
+  /// client, so anything belonging to another account has to switch before it
+  /// opens, or it opens on the wrong account, or on nothing.
+  Client? activateAccount(Client client) {
     final matrix = Matrix.of(context);
-    if (room.client == matrix.client) return null;
-    setState(() => matrix.setActiveClient(room.client));
-    return room.client;
+    if (client == matrix.client) return null;
+    setState(() => matrix.setActiveClient(client));
+    return client;
   }
+
+  Client? _activateOwner(Room room) => activateAccount(room.client);
 
   /// Whether [room] is the chat currently open.
   ///
@@ -235,8 +237,16 @@ class ChatListController extends State<ChatList>
   Future<QueryPublicRoomsResponse>? publicRoomsResponse;
   String? searchServer;
   Timer? _coolDown;
-  SearchUserDirectoryResponse? userSearchResult;
-  QueryPublicRoomsResponse? roomSearchResult;
+
+  /// Search results with the account that found them.
+  ///
+  /// Directory search is a request to one homeserver, so with two accounts
+  /// there are two directories and a search that asks only the active one
+  /// cannot find what the other account can see. Every result carries its
+  /// account because acting on one -- joining the room, opening the profile
+  /// -- has to happen on the account that can.
+  List<({Profile profile, Client client})>? userSearchResult;
+  List<({PublishedRoomsChunk chunk, Client client})>? roomSearchResult;
 
   bool isSearching = false;
   static const String _serverStoreNamespace = 'im.fluffychat.search.server';
@@ -282,61 +292,132 @@ class ChatListController extends State<ChatList>
   }
 
   Future<void> _search() async {
-    final client = Matrix.of(context).client;
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final active = Matrix.of(context).client;
+    final server = searchServer;
+    // A server override names one homeserver, so it gets asked once, through
+    // the active account. Otherwise every account asks its own directory,
+    // active first so that a result both of them can see opens on the
+    // account already in use.
+    final clients = server != null
+        ? [active]
+        : [active, ...roomListClients.where((client) => client != active)];
+
     if (!isSearching) {
       setState(() {
         isSearching = true;
       });
     }
-    SearchUserDirectoryResponse? userSearchResult;
-    QueryPublicRoomsResponse? roomSearchResult;
-    final searchQuery = searchController.text.trim();
+    // Read once, here, and carried through every request this fan-out makes.
+    // Reading the controller again inside a request means one invocation can
+    // come back with rooms for what was typed then and people for what is
+    // typed now.
+    final query = searchController.text;
+    // Typing again supersedes this search. Without the check the slower of
+    // two overlapping fan-outs publishes last, whichever one the user is
+    // actually waiting for.
+    final generation = ++_searchGeneration;
+
+    // Every account searches at once, but they are merged afterwards in the
+    // order the accounts were ASKED, not the order they answered. Merging
+    // inside the futures gives a room both accounts can see to whichever
+    // homeserver replied first, so which account it opens on would come down
+    // to the network.
+    final answers = await Future.wait(
+      clients.map((client) => _searchOneAccount(client, query, server)),
+    );
+    if (!isSearchMode || !mounted || generation != _searchGeneration) return;
+
+    final rooms = <String, ({PublishedRoomsChunk chunk, Client client})>{};
+    final users = <String, ({Profile profile, Client client})>{};
+    Object? lastError;
+    var failed = 0;
+    for (var i = 0; i < clients.length; i++) {
+      final answer = answers[i];
+      final error = answer.error;
+      if (error != null) {
+        failed++;
+        lastError = error;
+        continue;
+      }
+      // Keyed, so a room or a person both accounts can see appears once,
+      // belonging to the earlier account -- the active one.
+      for (final chunk in answer.rooms) {
+        rooms.putIfAbsent(
+          chunk.roomId,
+          () => (chunk: chunk, client: clients[i]),
+        );
+      }
+      for (final profile in answer.users) {
+        users.putIfAbsent(
+          profile.userId,
+          () => (profile: profile, client: clients[i]),
+        );
+      }
+    }
+    // Only when nothing at all came back is there nothing to show but the
+    // error.
+    if (failed == clients.length && lastError != null) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text(lastError.toLocalizedString(context))),
+      );
+    }
+    setState(() {
+      isSearching = false;
+      roomSearchResult = failed == clients.length
+          ? null
+          : rooms.values.toList();
+      userSearchResult = failed == clients.length
+          ? null
+          : users.values.toList();
+    });
+  }
+
+  /// Bumped by every search, so a fan-out that finishes after a newer one
+  /// started can tell that it did and keep its results to itself.
+  int _searchGeneration = 0;
+
+  /// One account's two directories, or the reason it could not answer -- one
+  /// account failing is no reason to throw away what the others found.
+  ///
+  /// [query] is the whole search: nothing in here reads the text field, which
+  /// has moved on by the time the second request goes out.
+  Future<
+    ({List<PublishedRoomsChunk> rooms, List<Profile> users, Object? error})
+  >
+  _searchOneAccount(Client client, String query, String? server) async {
+    final trimmed = query.trim();
     try {
-      roomSearchResult = await client.queryPublicRooms(
-        server: searchServer,
-        filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
+      final found = await client.queryPublicRooms(
+        server: server,
+        filter: PublicRoomQueryFilter(genericSearchTerm: trimmed),
         limit: 20,
       );
-
-      if (searchQuery.isValidMatrixIdStrict() &&
-          searchQuery.sigil == '#' &&
-          roomSearchResult.chunk.any(
-                (room) => room.canonicalAlias == searchQuery,
-              ) ==
-              false) {
-        final response = await client.getRoomIdByAlias(searchQuery);
+      final chunks = [...found.chunk];
+      if (trimmed.isValidMatrixIdStrict() &&
+          trimmed.sigil == '#' &&
+          chunks.any((room) => room.canonicalAlias == trimmed) == false) {
+        final response = await client.getRoomIdByAlias(trimmed);
         final roomId = response.roomId;
         if (roomId != null) {
-          roomSearchResult.chunk.add(
+          chunks.add(
             PublishedRoomsChunk(
-              name: searchQuery,
+              name: trimmed,
               guestCanJoin: false,
               numJoinedMembers: 0,
               roomId: roomId,
               worldReadable: false,
-              canonicalAlias: searchQuery,
+              canonicalAlias: trimmed,
             ),
           );
         }
       }
-      userSearchResult = await client.searchUserDirectory(
-        searchController.text,
-        limit: 20,
-      );
+      final directory = await client.searchUserDirectory(query, limit: 20);
+      return (rooms: chunks, users: directory.results, error: null);
     } catch (e, s) {
-      Logs().w('Searching has crashed', e, s);
-      if (!mounted) return;
-      scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text(e.toLocalizedString(context))),
-      );
+      Logs().w('Searching ${client.userID} has crashed', e, s);
+      return (rooms: <PublishedRoomsChunk>[], users: <Profile>[], error: e);
     }
-    if (!isSearchMode) return;
-    setState(() {
-      isSearching = false;
-      this.roomSearchResult = roomSearchResult;
-      this.userSearchResult = userSearchResult;
-    });
   }
 
   void onSearchEnter(String text, {bool globalSearch = true}) {

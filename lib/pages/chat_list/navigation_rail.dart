@@ -3,6 +3,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import 'package:async/async.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
@@ -25,11 +26,16 @@ class SpacesNavigationRail extends StatelessWidget {
   /// logged in, the rail leads with one avatar per account.
   final void Function(Client client)? onSwitchClient;
 
+  /// The accounts whose rooms "all chats" leads to, so its badge counts the
+  /// same set. Null means the active account, as it always did.
+  final List<Client>? allChatsClients;
+
   const SpacesNavigationRail({
     required this.activeSpaceId,
     required this.onGoToChats,
     required this.onGoToSpaceId,
     this.onSwitchClient,
+    this.allChatsClients,
     super.key,
   });
 
@@ -37,6 +43,7 @@ class SpacesNavigationRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final matrix = Matrix.of(context);
     final client = matrix.client;
+    final badgeClients = allChatsClients ?? [client];
     final onSwitchClient = this.onSwitchClient;
     final accounts = onSwitchClient == null
         ? const <Client>[]
@@ -50,10 +57,19 @@ class SpacesNavigationRail extends StatelessWidget {
       color: coloredMode ? theme.colorScheme.surfaceContainer : null,
       child: SafeArea(
         child: StreamBuilder(
-          key: ValueKey(client.userID.toString()),
-          stream: client.onSync.stream
-              .where((s) => s.hasRoomUpdate)
-              .rateLimit(const Duration(seconds: 1)),
+          // Rebuilds on every account the badge counts. Listening to the
+          // active one alone leaves the "all chats" count frozen at whatever
+          // the other account's unreads were when the rail was built.
+          key: ValueKey(badgeClients.map((c) => c.userID).join(',')),
+          stream: badgeClients.length == 1
+              ? client.onSync.stream
+                    .where((s) => s.hasRoomUpdate)
+                    .rateLimit(const Duration(seconds: 1))
+              : StreamGroup.merge(
+                      badgeClients.map((client) => client.onSync.stream),
+                    )
+                    .where((s) => s.hasRoomUpdate)
+                    .rateLimit(const Duration(seconds: 1)),
           builder: (context, _) {
             final allSpaces = client.rooms
                 .where((room) => room.isSpace)
@@ -119,6 +135,11 @@ class SpacesNavigationRail extends StatelessWidget {
                           return NaviRailItem(
                             isSelected: activeSpaceId == null,
                             onTap: onGoToChats,
+                            // What "all chats" opens is what it counts. In
+                            // the unified inbox that is every account, and
+                            // counting the active one would report fewer
+                            // unreads than the list it leads to shows.
+                            badgeClients: badgeClients,
                             icon: const Padding(
                               padding: EdgeInsets.all(12.0),
                               child: Icon(Icons.forum_outlined),

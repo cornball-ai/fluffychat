@@ -55,6 +55,7 @@ class ChatListView extends StatelessWidget {
                       onGoToChats: controller.clearActiveSpace,
                       onGoToSpaceId: controller.setActiveSpace,
                       onSwitchClient: controller.setActiveClient,
+                      allChatsClients: controller.roomListClients,
                     )
                   : SizedBox(
                       width: 0,

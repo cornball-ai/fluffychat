@@ -70,11 +70,11 @@ class ChatListViewBody extends StatelessWidget {
       }
     }
 
-    final publicRooms = controller.roomSearchResult?.chunk
-        .where((room) => room.roomType != 'm.space')
+    final publicRooms = controller.roomSearchResult
+        ?.where((result) => result.chunk.roomType != 'm.space')
         .toList();
-    final publicSpaces = controller.roomSearchResult?.chunk
-        .where((room) => room.roomType == 'm.space')
+    final publicSpaces = controller.roomSearchResult
+        ?.where((result) => result.chunk.roomType == 'm.space')
         .toList();
     final userSearchResult = controller.userSearchResult;
     const dummyChatCount = 4;
@@ -105,12 +105,18 @@ class ChatListViewBody extends StatelessWidget {
                     title: L10n.of(context).publicRooms,
                     icon: const Icon(Icons.explore_outlined),
                   ),
-                  PublicRoomsHorizontalList(publicRooms: publicRooms),
+                  PublicRoomsHorizontalList(
+                    publicRooms: publicRooms,
+                    onOpen: controller.activateAccount,
+                  ),
                   SearchTitle(
                     title: L10n.of(context).publicSpaces,
                     icon: const Icon(Icons.workspaces_outlined),
                   ),
-                  PublicRoomsHorizontalList(publicRooms: publicSpaces),
+                  PublicRoomsHorizontalList(
+                    publicRooms: publicSpaces,
+                    onOpen: controller.activateAccount,
+                  ),
                   SearchTitle(
                     title: L10n.of(context).users,
                     icon: const Icon(Icons.group_outlined),
@@ -118,9 +124,7 @@ class ChatListViewBody extends StatelessWidget {
                   AnimatedContainer(
                     clipBehavior: Clip.hardEdge,
                     decoration: const BoxDecoration(),
-                    height:
-                        userSearchResult == null ||
-                            userSearchResult.results.isEmpty
+                    height: userSearchResult == null || userSearchResult.isEmpty
                         ? 0
                         : 106,
                     duration: FluffyThemes.animationDuration,
@@ -129,21 +133,29 @@ class ChatListViewBody extends StatelessWidget {
                         ? null
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            itemCount: userSearchResult.results.length,
-                            itemBuilder: (context, i) => _SearchItem(
-                              title:
-                                  userSearchResult.results[i].displayName ??
-                                  userSearchResult
-                                      .results[i]
-                                      .userId
-                                      .localpart ??
-                                  L10n.of(context).unknownDevice,
-                              avatar: userSearchResult.results[i].avatarUrl,
-                              onPressed: () => UserDialog.show(
-                                context: context,
-                                profile: userSearchResult.results[i],
-                              ),
-                            ),
+                            itemCount: userSearchResult.length,
+                            itemBuilder: (context, i) {
+                              final result = userSearchResult[i];
+                              return _SearchItem(
+                                title:
+                                    result.profile.displayName ??
+                                    result.profile.userId.localpart ??
+                                    L10n.of(context).unknownDevice,
+                                avatar: result.profile.avatarUrl,
+                                client: result.client,
+                                onPressed: () {
+                                  // The dialog starts direct chats and reads
+                                  // the ignore list off the active account,
+                                  // so the account that found this person has
+                                  // to be the active one before it opens.
+                                  controller.activateAccount(result.client);
+                                  UserDialog.show(
+                                    context: context,
+                                    profile: result.profile,
+                                  );
+                                },
+                              );
+                            },
                           ),
                   ),
                 ],
@@ -290,9 +302,17 @@ class ChatListViewBody extends StatelessWidget {
 }
 
 class PublicRoomsHorizontalList extends StatelessWidget {
-  const PublicRoomsHorizontalList({super.key, required this.publicRooms});
+  const PublicRoomsHorizontalList({
+    super.key,
+    required this.publicRooms,
+    required this.onOpen,
+  });
 
-  final List<PublishedRoomsChunk>? publicRooms;
+  final List<({PublishedRoomsChunk chunk, Client client})>? publicRooms;
+
+  /// Called before the join dialog opens, to make the finding account the
+  /// active one -- the dialog joins, knocks and reports through it.
+  final void Function(Client client) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -308,22 +328,28 @@ class PublicRoomsHorizontalList extends StatelessWidget {
           : ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: publicRooms.length,
-              itemBuilder: (context, i) => _SearchItem(
-                title:
-                    publicRooms[i].name ??
-                    publicRooms[i].canonicalAlias?.localpart ??
-                    L10n.of(context).group,
-                avatar: publicRooms[i].avatarUrl,
-                onPressed: () => showAdaptiveDialog(
-                  context: context,
-                  barrierDismissible: true,
-                  builder: (c) => PublicRoomDialog(
-                    roomAlias:
-                        publicRooms[i].canonicalAlias ?? publicRooms[i].roomId,
-                    chunk: publicRooms[i],
-                  ),
-                ),
-              ),
+              itemBuilder: (context, i) {
+                final chunk = publicRooms[i].chunk;
+                return _SearchItem(
+                  title:
+                      chunk.name ??
+                      chunk.canonicalAlias?.localpart ??
+                      L10n.of(context).group,
+                  avatar: chunk.avatarUrl,
+                  client: publicRooms[i].client,
+                  onPressed: () {
+                    onOpen(publicRooms[i].client);
+                    showAdaptiveDialog(
+                      context: context,
+                      barrierDismissible: true,
+                      builder: (c) => PublicRoomDialog(
+                        roomAlias: chunk.canonicalAlias ?? chunk.roomId,
+                        chunk: chunk,
+                      ),
+                    );
+                  },
+                );
+              },
             ),
     );
   }
@@ -334,9 +360,14 @@ class _SearchItem extends StatelessWidget {
   final Uri? avatar;
   final void Function() onPressed;
 
+  /// Which account found this, so its thumbnail is fetched from a homeserver
+  /// that will serve it.
+  final Client? client;
+
   const _SearchItem({
     required this.title,
     this.avatar,
+    this.client,
     required this.onPressed,
   });
 
@@ -349,7 +380,7 @@ class _SearchItem extends StatelessWidget {
         mainAxisSize: .min,
         children: [
           const SizedBox(height: 8),
-          Avatar(mxContent: avatar, name: title),
+          Avatar(client: client, mxContent: avatar, name: title),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Text(
