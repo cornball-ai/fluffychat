@@ -2,24 +2,30 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
 import 'package:fluffychat/utils/string_color.dart';
-import 'package:fluffychat/widgets/avatar.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:matrix/matrix.dart';
 
 /// Whose account a room belongs to, for the unified inbox where two accounts'
 /// rooms sit in one list and nothing else on the row says which is which.
 ///
-/// It shows the user ID rather than the person, because the accounts are
-/// usually the same human: a display name and a profile picture are the two
-/// things least likely to tell them apart, and drawing either costs a profile
-/// fetch per row. Two letters, the localpart's and the homeserver's, so that
-/// neither two accounts on one server nor one person on two servers collapse
-/// into the same badge. The colour comes from the whole id, but it is a tie
-/// breaker rather than the identity: the palette holds twelve hues.
+/// It draws [label] verbatim -- see `accountBadgeLabels`, which is what makes
+/// the labels on screen distinct from one another. Deriving letters from a
+/// name is what this deliberately does not do: `Avatar` takes the initial of
+/// the first word and of the last, so `matrix.org` came out as a lone "m" and
+/// every account on that server drew the same badge.
+///
+/// It shows the account, not the person. The accounts are usually the same
+/// human, so a display name and a profile picture are the two things least
+/// likely to tell them apart, and drawing either would cost a profile fetch
+/// per row. The colour is decoration on top of the label, not the identity:
+/// the palette holds twelve hues and two accounts may well share one.
 class AccountBadge extends StatelessWidget {
-  final Client client;
+  /// Colours the badge and names the account in the tooltip.
+  final String userId;
+
+  /// One or two characters, drawn as given.
+  final String label;
+
   final double size;
 
   /// What the badge is cut out of, so the ring reads as a gap rather than a
@@ -27,7 +33,8 @@ class AccountBadge extends StatelessWidget {
   final Color? borderColor;
 
   const AccountBadge({
-    required this.client,
+    required this.userId,
+    required this.label,
     this.size = 22,
     this.borderColor,
     super.key,
@@ -36,24 +43,31 @@ class AccountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final userId = client.userID ?? '';
     final scheme = userId.colorScheme;
-    final borderRadius = BorderRadius.circular(size / 2);
     return Tooltip(
       message: userId,
-      child: Avatar(
-        client: client,
-        name: accountBadgeLabel(userId),
-        backgroundColor: scheme.primaryContainer,
-        textColor: scheme.onPrimaryContainer,
-        size: size,
-        borderRadius: borderRadius,
-        shapeBorder: RoundedSuperellipseBorder(
-          side: BorderSide(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          shape: BoxShape.circle,
+          border: Border.all(
             width: 2,
             color: borderColor ?? theme.colorScheme.surface,
           ),
-          borderRadius: borderRadius,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'RobotoMono',
+            fontWeight: FontWeight.bold,
+            fontSize: (size / 2.4).roundToDouble(),
+            color: scheme.onPrimaryContainer,
+          ),
         ),
       ),
     );

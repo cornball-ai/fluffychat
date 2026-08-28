@@ -14,22 +14,60 @@
 /// highlight all need both halves, or they silently merge the two.
 typedef RoomRef = (String clientName, String roomId);
 
-/// The two letters a badge shows for [userId], as a name for `Avatar` to
-/// split: the localpart's initial and the homeserver's.
+/// What each account's badge draws, keyed by user ID.
 ///
-/// One letter is not enough either way round. Two accounts on one homeserver
-/// share a domain initial, two accounts of the same person share a localpart
-/// initial, and colour cannot break the tie -- the palette has twelve hues,
-/// so a collision is ordinary rather than unlucky.
-String accountBadgeLabel(String? userId) {
-  if (userId == null || userId.isEmpty) return '';
+/// No fixed rule on a single id can be trusted here, because every short one
+/// collides with some other id: `@troy:cornball.ai` and `@troy:matrix.org`
+/// share a localpart, `@troy:matrix.org` and `@tom:matrix.org` share both
+/// initials. Colour cannot break the tie either -- the palette holds twelve
+/// hues, so a collision there is ordinary rather than unlucky.
+///
+/// So the label is computed against the accounts that are actually in the
+/// list. Each rule below is tried in turn and the first that gives every
+/// account its own label wins, which keeps the badge as short as these
+/// particular accounts allow: one letter for two different people, two when
+/// it takes the homeserver or a second letter to separate them.
+Map<String, String> accountBadgeLabels(Iterable<String> userIds) {
+  final ids = userIds.toList(growable: false);
+  final parts = {for (final id in ids) id: _splitUserId(id)};
+  for (final rule in _badgeRules) {
+    if (parts.values.any((part) => part == null)) break;
+    final labels = {
+      for (final id in ids) id: rule(parts[id]!.localpart, parts[id]!.domain),
+    };
+    if (labels.length == ids.length &&
+        labels.values.toSet().length == ids.length) {
+      return labels;
+    }
+  }
+  // Nothing this short separates them, or an id was not a user ID at all. A
+  // badge you cannot tell from the one above it is worse than a number.
+  return {for (var i = 0; i < ids.length; i++) ids[i]: '${i + 1}'};
+}
+
+/// Matrix restricts both halves to ASCII, so a code unit is a character here.
+({String localpart, String domain})? _splitUserId(String userId) {
   final colon = userId.indexOf(':');
-  if (colon < 0) return userId;
+  if (colon < 0) return null;
   final localpart = userId.substring(0, colon).replaceFirst('@', '');
   final domain = userId.substring(colon + 1);
-  if (localpart.isEmpty || domain.isEmpty) return '';
-  return '$localpart $domain';
+  if (localpart.isEmpty || domain.isEmpty) return null;
+  return (localpart: localpart, domain: domain);
 }
+
+const _badgeRules = <String Function(String localpart, String domain)>[
+  _initial,
+  _initialAndServer,
+  _twoLetters,
+];
+
+String _initial(String localpart, String domain) => localpart.substring(0, 1);
+
+String _initialAndServer(String localpart, String domain) =>
+    '${localpart.substring(0, 1)}${domain.substring(0, 1)}';
+
+String _twoLetters(String localpart, String domain) =>
+    localpart.length >= 2 ? localpart.substring(0, 2) : localpart;
 
 /// Every shown account's rooms in one order.
 ///

@@ -31,8 +31,9 @@ class ChatListItem extends StatelessWidget {
 
   /// Which account the room belongs to, badged on the avatar for the unified
   /// inbox where the list spans several. Null everywhere else, and the row
-  /// draws exactly as it always did.
-  final Client? accountClient;
+  /// draws exactly as it always did. The label comes from the list, which is
+  /// the only place that knows which accounts have to be told apart.
+  final ({String userId, String label})? account;
 
   const ChatListItem(
     this.room, {
@@ -42,7 +43,7 @@ class ChatListItem extends StatelessWidget {
     this.onForget,
     this.filter,
     this.space,
-    this.accountClient,
+    this.account,
     super.key,
   });
 
@@ -71,11 +72,11 @@ class ChatListItem extends StatelessWidget {
     final needLastEventSender =
         lastEvent != null &&
         room.getState(EventTypes.RoomMember, lastEvent.senderId) == null;
-    final accountClient = this.accountClient;
+    final account = this.account;
     // Both want the same corner, and in a list that spans accounts whose
     // account it is beats which space it came from: the space is still one
     // long-press away, the account is written nowhere else on the row.
-    final space = accountClient == null ? this.space : null;
+    final space = account == null ? this.space : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -169,12 +170,13 @@ class ChatListItem extends StatelessWidget {
                             onTap: () => onLongPress?.call(context),
                           ),
                         ),
-                        if (accountClient != null)
+                        if (account != null)
                           Positioned(
                             top: 0,
                             left: 0,
                             child: AccountBadge(
-                              client: accountClient,
+                              userId: account.userId,
+                              label: account.label,
                               borderColor:
                                   backgroundColor ?? theme.colorScheme.surface,
                             ),

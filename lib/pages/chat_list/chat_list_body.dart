@@ -45,6 +45,11 @@ class ChatListViewBody extends StatelessWidget {
     // same as it did when it named the active client directly.
     final clients = controller.roomListClients;
     final unified = controller.isUnifiedInbox;
+    // Computed over the whole set, because what makes one account's badge
+    // readable is which other accounts it has to differ from.
+    final accountLabels = unified
+        ? accountBadgeLabels(clients.map((client) => client.userID ?? ''))
+        : const <String, String>{};
     final anySynced = clients.any((client) => client.prevBatch != null);
     final spaces = clients
         .expand((client) => client.rooms)
@@ -249,10 +254,13 @@ class ChatListViewBody extends StatelessWidget {
                     final room = rooms[i];
                     final ref = (room.client.clientName, room.id);
                     final space = spaceDelegateCandidates[ref];
+                    final userId = room.client.userID ?? '';
                     return ChatListItem(
                       room,
                       space: space,
-                      accountClient: unified ? room.client : null,
+                      account: unified
+                          ? (userId: userId, label: accountLabels[userId] ?? '')
+                          : null,
                       key: ValueKey(ref),
                       filter: filter,
                       onTap: () => controller.onChatTap(room),

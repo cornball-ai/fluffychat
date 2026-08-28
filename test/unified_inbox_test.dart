@@ -131,34 +131,90 @@ void main() {
     });
   });
 
-  group('accountBadgeLabel', () {
-    test('two accounts on one homeserver do not collide', () {
-      // The domain alone gives both of them "m". Avatar takes the first
-      // letter of the first word and of the last, so the localpart has to be
-      // in there.
-      expect(accountBadgeLabel('@troy:matrix.org'), 'troy matrix.org');
-      expect(accountBadgeLabel('@dirk:matrix.org'), 'dirk matrix.org');
-    });
-
-    test('one person on two homeservers does not collide', () {
-      expect(accountBadgeLabel('@troy:cornball.ai'), 'troy cornball.ai');
+  group('accountBadgeLabels', () {
+    // These are the strings that get drawn, character for character. The
+    // property under test is that no two of them are equal -- checked here
+    // per case, and rendered for real in account_badge_test.dart.
+    void expectDistinct(Map<String, String> labels) {
       expect(
-        accountBadgeLabel('@troyhernandez:matrix.org'),
-        'troyhernandez matrix.org',
+        labels.values.toSet().length,
+        labels.length,
+        reason: 'two accounts would draw the same badge: $labels',
       );
+    }
+
+    test('two people keep one letter each', () {
+      final labels = accountBadgeLabels([
+        '@troy:matrix.org',
+        '@dirk:matrix.org',
+      ]);
+      expect(labels['@troy:matrix.org'], 't');
+      expect(labels['@dirk:matrix.org'], 'd');
+      expectDistinct(labels);
     });
 
-    test('a missing or malformed id draws nothing rather than throwing', () {
-      // Avatar reads the first character of the first word, so an empty
-      // localpart or domain is a RangeError waiting on a list row.
-      expect(accountBadgeLabel(null), '');
-      expect(accountBadgeLabel(''), '');
-      expect(accountBadgeLabel('@troy:'), '');
-      expect(accountBadgeLabel('@:matrix.org'), '');
+    test('one person on two homeservers takes the server', () {
+      final labels = accountBadgeLabels([
+        '@troy:cornball.ai',
+        '@troyhernandez:matrix.org',
+      ]);
+      expect(labels['@troy:cornball.ai'], 'tc');
+      expect(labels['@troyhernandez:matrix.org'], 'tm');
+      expectDistinct(labels);
     });
 
-    test('an id with no colon is passed through, not split', () {
-      expect(accountBadgeLabel('troy'), 'troy');
+    test('the same localpart on two homeservers still separates', () {
+      final labels = accountBadgeLabels([
+        '@troy:cornball.ai',
+        '@troy:matrix.org',
+      ]);
+      expectDistinct(labels);
+    });
+
+    test('two localparts sharing an initial take a second letter', () {
+      // The case a fixed rule cannot serve: initial and server are both "t"
+      // and "m", so the label has to grow into the localpart instead.
+      final labels = accountBadgeLabels([
+        '@troy:matrix.org',
+        '@tom:matrix.org',
+      ]);
+      expect(labels['@troy:matrix.org'], 'tr');
+      expect(labels['@tom:matrix.org'], 'to');
+      expectDistinct(labels);
+    });
+
+    test('three accounts are all separated at once', () {
+      final labels = accountBadgeLabels([
+        '@troy:matrix.org',
+        '@tom:matrix.org',
+        '@dirk:matrix.org',
+      ]);
+      expectDistinct(labels);
+    });
+
+    test('accounts nothing short can separate fall back to numbers', () {
+      // Two letters and the server agree throughout. A number nobody can
+      // read as a name still beats two badges nobody can tell apart.
+      final labels = accountBadgeLabels([
+        '@troy:matrix.org',
+        '@troyd:matrix.org',
+      ]);
+      expect(labels['@troy:matrix.org'], '1');
+      expect(labels['@troyd:matrix.org'], '2');
+      expectDistinct(labels);
+    });
+
+    test('a malformed id numbers rather than throwing', () {
+      // An empty localpart or domain is a substring RangeError on a list row.
+      final labels = accountBadgeLabels(['', '@troy:', '@:matrix.org', 'troy']);
+      expect(labels.values, ['1', '2', '3', '4']);
+    });
+
+    test('one account and none at all are both fine', () {
+      expect(accountBadgeLabels(['@troy:matrix.org']), {
+        '@troy:matrix.org': 't',
+      });
+      expect(accountBadgeLabels([]), isEmpty);
     });
   });
 

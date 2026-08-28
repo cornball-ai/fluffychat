@@ -616,6 +616,11 @@ class ChatListController extends State<ChatList>
               mainAxisSize: .min,
               children: [
                 Avatar(
+                  // The space belongs to the room's account, which is not
+                  // necessarily the active one; MxcImage falls back to the
+                  // active client and would fetch the media on an account
+                  // that cannot see it.
+                  client: space.client,
                   mxContent: space.avatar,
                   size: Avatar.defaultSize / 2,
                   name: space.getLocalizedDisplayname(),
