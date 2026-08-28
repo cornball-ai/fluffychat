@@ -14,7 +14,12 @@
 /// highlight all need both halves, or they silently merge the two.
 typedef RoomRef = (String clientName, String roomId);
 
-/// What each account's badge draws, keyed by user ID.
+/// What each account's badge draws, keyed by client name.
+///
+/// By client and not by user ID, because the same account can be logged in
+/// twice: two clients that share an id are still two rows, and a map keyed on
+/// the id collapses them into one entry that both rows then read -- the same
+/// badge on both, which is the thing this is here to prevent.
 ///
 /// No fixed rule on a single id can be trusted here, because every short one
 /// collides with some other id: `@troy:cornball.ai` and `@troy:matrix.org`
@@ -27,22 +32,26 @@ typedef RoomRef = (String clientName, String roomId);
 /// account its own label wins, which keeps the badge as short as these
 /// particular accounts allow: one letter for two different people, two when
 /// it takes the homeserver or a second letter to separate them.
-Map<String, String> accountBadgeLabels(Iterable<String> userIds) {
-  final ids = userIds.toList(growable: false);
-  final parts = {for (final id in ids) id: _splitUserId(id)};
+Map<String, String> accountBadgeLabels(
+  Iterable<({String clientName, String userId})> accounts,
+) {
+  final list = accounts.toList(growable: false);
+  final parts = [for (final account in list) _splitUserId(account.userId)];
   for (final rule in _badgeRules) {
-    if (parts.values.any((part) => part == null)) break;
+    if (parts.any((part) => part == null)) break;
     final labels = {
-      for (final id in ids) id: rule(parts[id]!.localpart, parts[id]!.domain),
+      for (var i = 0; i < list.length; i++)
+        list[i].clientName: rule(parts[i]!.localpart, parts[i]!.domain),
     };
-    if (labels.length == ids.length &&
-        labels.values.toSet().length == ids.length) {
+    if (labels.length == list.length &&
+        labels.values.toSet().length == list.length) {
       return labels;
     }
   }
-  // Nothing this short separates them, or an id was not a user ID at all. A
-  // badge you cannot tell from the one above it is worse than a number.
-  return {for (var i = 0; i < ids.length; i++) ids[i]: '${i + 1}'};
+  // Nothing this short separates them, an id was not a user ID at all, or the
+  // same account is logged in twice. A badge you cannot tell from the one
+  // above it is worse than a number.
+  return {for (var i = 0; i < list.length; i++) list[i].clientName: '${i + 1}'};
 }
 
 /// Matrix restricts both halves to ASCII, so a code unit is a character here.

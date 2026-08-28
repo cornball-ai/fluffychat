@@ -135,6 +135,14 @@ void main() {
     // These are the strings that get drawn, character for character. The
     // property under test is that no two of them are equal -- checked here
     // per case, and rendered for real in account_badge_test.dart.
+    //
+    // Client names stand in for what the list passes: one per logged-in
+    // client, which is not the same thing as one per user ID.
+    Map<String, String> labelsFor(List<String> userIds) => accountBadgeLabels([
+      for (var i = 0; i < userIds.length; i++)
+        (clientName: 'client$i', userId: userIds[i]),
+    ]);
+
     void expectDistinct(Map<String, String> labels) {
       expect(
         labels.values.toSet().length,
@@ -144,76 +152,66 @@ void main() {
     }
 
     test('two people keep one letter each', () {
-      final labels = accountBadgeLabels([
-        '@troy:matrix.org',
-        '@dirk:matrix.org',
-      ]);
-      expect(labels['@troy:matrix.org'], 't');
-      expect(labels['@dirk:matrix.org'], 'd');
+      final labels = labelsFor(['@troy:matrix.org', '@dirk:matrix.org']);
+      expect(labels.values, ['t', 'd']);
       expectDistinct(labels);
     });
 
     test('one person on two homeservers takes the server', () {
-      final labels = accountBadgeLabels([
+      final labels = labelsFor([
         '@troy:cornball.ai',
         '@troyhernandez:matrix.org',
       ]);
-      expect(labels['@troy:cornball.ai'], 'tc');
-      expect(labels['@troyhernandez:matrix.org'], 'tm');
+      expect(labels.values, ['tc', 'tm']);
       expectDistinct(labels);
     });
 
     test('the same localpart on two homeservers still separates', () {
-      final labels = accountBadgeLabels([
-        '@troy:cornball.ai',
-        '@troy:matrix.org',
-      ]);
-      expectDistinct(labels);
+      expectDistinct(labelsFor(['@troy:cornball.ai', '@troy:matrix.org']));
     });
 
     test('two localparts sharing an initial take a second letter', () {
       // The case a fixed rule cannot serve: initial and server are both "t"
       // and "m", so the label has to grow into the localpart instead.
-      final labels = accountBadgeLabels([
-        '@troy:matrix.org',
-        '@tom:matrix.org',
-      ]);
-      expect(labels['@troy:matrix.org'], 'tr');
-      expect(labels['@tom:matrix.org'], 'to');
+      final labels = labelsFor(['@troy:matrix.org', '@tom:matrix.org']);
+      expect(labels.values, ['tr', 'to']);
       expectDistinct(labels);
     });
 
     test('three accounts are all separated at once', () {
-      final labels = accountBadgeLabels([
-        '@troy:matrix.org',
-        '@tom:matrix.org',
-        '@dirk:matrix.org',
-      ]);
-      expectDistinct(labels);
+      expectDistinct(
+        labelsFor(['@troy:matrix.org', '@tom:matrix.org', '@dirk:matrix.org']),
+      );
     });
 
     test('accounts nothing short can separate fall back to numbers', () {
       // Two letters and the server agree throughout. A number nobody can
       // read as a name still beats two badges nobody can tell apart.
-      final labels = accountBadgeLabels([
-        '@troy:matrix.org',
-        '@troyd:matrix.org',
+      final labels = labelsFor(['@troy:matrix.org', '@troyd:matrix.org']);
+      expect(labels.values, ['1', '2']);
+      expectDistinct(labels);
+    });
+
+    test('the same account logged in twice is still two badges', () {
+      // Nothing rejects a second login to an account already logged in, and
+      // then the two clients share a user ID. Keyed on the id, both rows read
+      // one entry and draw the same badge; keyed on the client, they do not.
+      final labels = accountBadgeLabels(const [
+        (clientName: 'FluffyChat', userId: '@troy:matrix.org'),
+        (clientName: 'FluffyChat-1756', userId: '@troy:matrix.org'),
       ]);
-      expect(labels['@troy:matrix.org'], '1');
-      expect(labels['@troyd:matrix.org'], '2');
+      expect(labels, {'FluffyChat': '1', 'FluffyChat-1756': '2'});
       expectDistinct(labels);
     });
 
     test('a malformed id numbers rather than throwing', () {
       // An empty localpart or domain is a substring RangeError on a list row.
-      final labels = accountBadgeLabels(['', '@troy:', '@:matrix.org', 'troy']);
+      final labels = labelsFor(['', '@troy:', '@:matrix.org', 'troy']);
       expect(labels.values, ['1', '2', '3', '4']);
     });
 
     test('one account and none at all are both fine', () {
-      expect(accountBadgeLabels(['@troy:matrix.org']), {
-        '@troy:matrix.org': 't',
-      });
+      expect(labelsFor(['@troy:matrix.org']), {'client0': 't'});
       expect(accountBadgeLabels([]), isEmpty);
     });
   });

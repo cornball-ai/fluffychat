@@ -14,14 +14,23 @@ import 'package:material_ui/material_ui.dart';
 /// as a lone "m" and every account on that server got the same badge while
 /// the helper's own test passed on the full string.
 Future<List<String>> _render(WidgetTester tester, List<String> userIds) async {
-  final labels = accountBadgeLabels(userIds);
+  // One client per entry, which is what the list passes: two of them can
+  // share a user ID when the same account is logged in twice.
+  final accounts = [
+    for (var i = 0; i < userIds.length; i++)
+      (clientName: 'client$i', userId: userIds[i]),
+  ];
+  final labels = accountBadgeLabels(accounts);
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: Column(
           children: [
-            for (final id in userIds)
-              AccountBadge(userId: id, label: labels[id]!),
+            for (final account in accounts)
+              AccountBadge(
+                userId: account.userId,
+                label: labels[account.clientName]!,
+              ),
           ],
         ),
       ),
@@ -67,6 +76,8 @@ void main() {
       ['@troy:matrix.org', '@troyd:matrix.org'],
       ['@troy:cornball.ai', '@troy:matrix.org'],
       ['', '@troy:'],
+      // The same account logged in twice: one user ID, two rows.
+      ['@troy:matrix.org', '@troy:matrix.org'],
     ]) {
       final drawn = await _render(tester, accounts);
       expect(

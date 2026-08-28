@@ -48,7 +48,12 @@ class ChatListViewBody extends StatelessWidget {
     // Computed over the whole set, because what makes one account's badge
     // readable is which other accounts it has to differ from.
     final accountLabels = unified
-        ? accountBadgeLabels(clients.map((client) => client.userID ?? ''))
+        ? accountBadgeLabels(
+            clients.map(
+              (client) =>
+                  (clientName: client.clientName, userId: client.userID ?? ''),
+            ),
+          )
         : const <String, String>{};
     final anySynced = clients.any((client) => client.prevBatch != null);
     final spaces = clients
@@ -254,12 +259,18 @@ class ChatListViewBody extends StatelessWidget {
                     final room = rooms[i];
                     final ref = (room.client.clientName, room.id);
                     final space = spaceDelegateCandidates[ref];
-                    final userId = room.client.userID ?? '';
                     return ChatListItem(
                       room,
                       space: space,
                       account: unified
-                          ? (userId: userId, label: accountLabels[userId] ?? '')
+                          ? (
+                              // The id names the account, the client name
+                              // identifies it: the two part company when the
+                              // same account is logged in twice.
+                              userId: room.client.userID ?? '',
+                              label:
+                                  accountLabels[room.client.clientName] ?? '',
+                            )
                           : null,
                       key: ValueKey(ref),
                       filter: filter,
