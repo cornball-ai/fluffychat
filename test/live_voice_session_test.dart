@@ -311,6 +311,10 @@ void main() {
       await harness.start();
       await harness.speak('hi');
 
+      // Snapshotted here because the interrupting turn starts a reply of its
+      // own that reports its own spoken text into the same list.
+      final spokenAtCut = [...harness.spoken];
+
       // The reply is mid-playback; the user says something of their own.
       harness.transport.emitStt(
         const SttTranscript('actually never mind that', stable: true),
@@ -322,6 +326,10 @@ void main() {
       expect(report.result, TurnResult.bargeIn);
       // Heard through the first segment only.
       expect(report.textHeard, 'Hello there. '.runes.length);
+      // And the screen was never told otherwise. A chunk stopped at 40% has
+      // not been heard by the rule the report uses, so marking its text as
+      // spoken would show the reader the very sentence this report excludes.
+      expect(spokenAtCut.last, 'Hello there. ');
       expect(harness.sink.cancels, greaterThan(0));
       expect(harness.session.replying, isFalse);
       // The session survives a barge-in; only the turn died.
@@ -336,6 +344,10 @@ void main() {
     await harness.start();
     await harness.speak('hi');
 
+    // Before the interrupting turn starts a reply of its own and reports
+    // into the same list.
+    final spokenAtCut = [...harness.spoken];
+
     harness.transport.emitStt(
       const SttTranscript('stop go back please', stable: true),
     );
@@ -345,6 +357,9 @@ void main() {
     final report = harness.transport.reports.first;
     expect(report.result, TurnResult.bargeIn);
     expect(report.textHeard, 0);
+    // Nothing counted as heard, so nothing was ever marked as said. The
+    // screen and the report agree on zero.
+    expect(spokenAtCut, isEmpty);
   });
 
   test('muted frames reach neither the wire nor barge-in', () async {

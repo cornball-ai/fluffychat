@@ -308,73 +308,48 @@ class ChatListController extends State<ChatList>
         isSearching = true;
       });
     }
-    // Keyed, so a room or a person both accounts can see appears once. The
-    // first account to report it keeps it, which is the active one.
-    final rooms = <String, ({PublishedRoomsChunk chunk, Client client})>{};
-    final users = <String, ({Profile profile, Client client})>{};
     final searchQuery = searchController.text.trim();
-    Object? lastError;
-    var failed = 0;
-
-    await Future.wait(
-      clients.map((client) async {
-        try {
-          final found = await client.queryPublicRooms(
-            server: server,
-            filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
-            limit: 20,
-          );
-          final chunks = [...found.chunk];
-          if (searchQuery.isValidMatrixIdStrict() &&
-              searchQuery.sigil == '#' &&
-              chunks.any((room) => room.canonicalAlias == searchQuery) ==
-                  false) {
-            final response = await client.getRoomIdByAlias(searchQuery);
-            final roomId = response.roomId;
-            if (roomId != null) {
-              chunks.add(
-                PublishedRoomsChunk(
-                  name: searchQuery,
-                  guestCanJoin: false,
-                  numJoinedMembers: 0,
-                  roomId: roomId,
-                  worldReadable: false,
-                  canonicalAlias: searchQuery,
-                ),
-              );
-            }
-          }
-          final directory = await client.searchUserDirectory(
-            searchController.text,
-            limit: 20,
-          );
-          for (final chunk in chunks) {
-            rooms.putIfAbsent(
-              chunk.roomId,
-              () => (chunk: chunk, client: client),
-            );
-          }
-          for (final profile in directory.results) {
-            users.putIfAbsent(
-              profile.userId,
-              () => (profile: profile, client: client),
-            );
-          }
-        } catch (e, s) {
-          // One account's homeserver being unreachable is not a reason to
-          // throw away what the other one found.
-          Logs().w('Searching ${client.userID} has crashed', e, s);
-          lastError = e;
-          failed++;
-        }
-      }),
+    // Every account searches at once, but they are merged afterwards in the
+    // order the accounts were ASKED, not the order they answered. Merging
+    // inside the futures gives a room both accounts can see to whichever
+    // homeserver replied first, so which account it opens on would come down
+    // to the network.
+    final answers = await Future.wait(
+      clients.map((client) => _searchOneAccount(client, searchQuery, server)),
     );
     if (!isSearchMode || !mounted) return;
+
+    final rooms = <String, ({PublishedRoomsChunk chunk, Client client})>{};
+    final users = <String, ({Profile profile, Client client})>{};
+    var failed = 0;
+    for (var i = 0; i < clients.length; i++) {
+      final answer = answers[i];
+      if (answer == null) {
+        failed++;
+        continue;
+      }
+      // Keyed, so a room or a person both accounts can see appears once,
+      // belonging to the earlier account -- the active one.
+      for (final chunk in answer.rooms) {
+        rooms.putIfAbsent(
+          chunk.roomId,
+          () => (chunk: chunk, client: clients[i]),
+        );
+      }
+      for (final profile in answer.users) {
+        users.putIfAbsent(
+          profile.userId,
+          () => (profile: profile, client: clients[i]),
+        );
+      }
+    }
+    final lastError = _lastSearchError;
+    _lastSearchError = null;
     // Only when nothing at all came back is there nothing to show but the
     // error.
     if (failed == clients.length && lastError != null) {
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text(lastError!.toLocalizedString(context))),
+        SnackBar(content: Text(lastError.toLocalizedString(context))),
       );
     }
     setState(() {
@@ -386,6 +361,50 @@ class ChatListController extends State<ChatList>
           ? null
           : users.values.toList();
     });
+  }
+
+  Object? _lastSearchError;
+
+  /// One account's two directories, or null when its homeserver could not
+  /// answer -- one account failing is no reason to throw away what the others
+  /// found.
+  Future<({List<PublishedRoomsChunk> rooms, List<Profile> users})?>
+  _searchOneAccount(Client client, String searchQuery, String? server) async {
+    try {
+      final found = await client.queryPublicRooms(
+        server: server,
+        filter: PublicRoomQueryFilter(genericSearchTerm: searchQuery),
+        limit: 20,
+      );
+      final chunks = [...found.chunk];
+      if (searchQuery.isValidMatrixIdStrict() &&
+          searchQuery.sigil == '#' &&
+          chunks.any((room) => room.canonicalAlias == searchQuery) == false) {
+        final response = await client.getRoomIdByAlias(searchQuery);
+        final roomId = response.roomId;
+        if (roomId != null) {
+          chunks.add(
+            PublishedRoomsChunk(
+              name: searchQuery,
+              guestCanJoin: false,
+              numJoinedMembers: 0,
+              roomId: roomId,
+              worldReadable: false,
+              canonicalAlias: searchQuery,
+            ),
+          );
+        }
+      }
+      final directory = await client.searchUserDirectory(
+        searchController.text,
+        limit: 20,
+      );
+      return (rooms: chunks, users: directory.results);
+    } catch (e, s) {
+      Logs().w('Searching ${client.userID} has crashed', e, s);
+      _lastSearchError = e;
+      return null;
+    }
   }
 
   void onSearchEnter(String text, {bool globalSearch = true}) {

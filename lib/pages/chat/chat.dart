@@ -765,26 +765,37 @@ class ChatController extends State<ChatPageWithRoom>
     const <VoiceTurn>[],
   );
 
-  void _appendVoiceTurn(VoiceTurn turn) =>
-      liveVoiceTurns.value = [...liveVoiceTurns.value, turn];
-
-  /// Replaces the last turn when [matches] accepts it, appends [ifAbsent]
+  /// Replaces the newest turn [matches] accepts, appends [ifAbsent]
   /// otherwise -- the shape every live update has: grow the turn in progress,
   /// or start one.
+  ///
+  /// Searching back rather than looking only at the tail, because an
+  /// interruption interleaves the two sides: the user's turn is appended
+  /// while the reply it cut into is still unfinished, and the report that
+  /// settles that reply arrives after it. Judging by the tail alone would
+  /// leave the interrupted reply unfinished forever and append its stored
+  /// text again below the user's words, in the wrong order and twice.
   void _updateVoiceTurn({
     required bool Function(VoiceTurn) matches,
     required VoiceTurn Function(VoiceTurn) update,
     required VoiceTurn Function() ifAbsent,
   }) {
-    final turns = liveVoiceTurns.value;
-    if (turns.isNotEmpty && matches(turns.last)) {
-      liveVoiceTurns.value = [
-        ...turns.take(turns.length - 1),
-        update(turns.last),
-      ];
+    final turns = [...liveVoiceTurns.value];
+    for (var i = turns.length - 1; i >= 0; i--) {
+      if (!matches(turns[i])) continue;
+      turns[i] = update(turns[i]);
+      liveVoiceTurns.value = turns;
       return;
     }
-    _appendVoiceTurn(ifAbsent());
+    liveVoiceTurns.value = [...turns, ifAbsent()];
+  }
+
+  /// Takes back the bubble for a turn that turned out not to be a turn.
+  void _dropUnfinishedUserTurn() {
+    final turns = liveVoiceTurns.value;
+    if (turns.isEmpty) return;
+    if (!turns.last.fromUser || turns.last.done) return;
+    liveVoiceTurns.value = turns.take(turns.length - 1).toList();
   }
 
   /// Session lifecycle for the voice-mode screen: flips true when a session
@@ -837,7 +848,13 @@ class ChatController extends State<ChatPageWithRoom>
             // The turn being dictated, growing in place. It is provisional
             // until the endpointer says otherwise, so it replaces itself
             // rather than accumulating.
-            if (text.isEmpty) return;
+            if (text.isEmpty) {
+              // Cleared: the session decided that turn was our own voice
+              // coming back through the microphone. It was never the user
+              // speaking, so the bubble it was filling has to go with it.
+              _dropUnfinishedUserTurn();
+              return;
+            }
             _updateVoiceTurn(
               matches: (turn) => turn.fromUser && !turn.done,
               update: (turn) => turn.withText(text),
