@@ -5,11 +5,13 @@
 
 import 'dart:async';
 
+import 'package:async/async.dart';
 import 'package:collection/collection.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_view.dart';
+import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
@@ -84,13 +86,45 @@ class ChatListController extends State<ChatList>
 
   String? get activeSpaceId => _activeSpaceId;
 
-  Future<void> setActiveSpace(String spaceId) async {
-    await Matrix.of(context).client.getRoomById(spaceId)!.postLoad();
+  /// Enters a space, on [client] when it is not the active account.
+  ///
+  /// The space view, its children and the rail all resolve against the active
+  /// client, so entering another account's space means becoming that account
+  /// first. Resolving the id there rather than asserting on the active client
+  /// is also what keeps a stale or foreign id from crashing the list.
+  Future<void> setActiveSpace(String spaceId, {Client? client}) async {
+    final matrix = Matrix.of(context);
+    final owner = client ?? matrix.client;
+    final space = owner.getRoomById(spaceId);
+    if (space == null) return;
+    await space.postLoad();
+    if (!mounted) return;
 
     setState(() {
+      if (owner != matrix.client) matrix.setActiveClient(owner);
       _activeSpaceId = spaceId;
     });
   }
+
+  /// Makes the room's own account active, and reports whether it had to.
+  ///
+  /// Every route that resolves a room id -- the chat page, the archive, the
+  /// ignore list -- looks it up on the active client, so a row from the other
+  /// account has to switch before it navigates or it opens on the wrong
+  /// account, or on nothing.
+  Client? _activateOwner(Room room) {
+    final matrix = Matrix.of(context);
+    if (room.client == matrix.client) return null;
+    setState(() => matrix.setActiveClient(room.client));
+    return room.client;
+  }
+
+  /// Whether [room] is the chat currently open.
+  ///
+  /// The open chat resolves against the active account, so the id alone
+  /// highlights both accounts' rows for a room they are both in.
+  bool isActiveChat(Room room) =>
+      activeChat == room.id && room.client == Matrix.of(context).client;
 
   void clearActiveSpace() => setState(() {
     _activeSpaceId = null;
@@ -123,17 +157,29 @@ class ChatListController extends State<ChatList>
       return;
     }
 
-    if (room.membership == Membership.leave) {
-      context.go('/rooms/archive/${room.id}');
-      return;
-    }
-
     if (room.isSpace) {
-      setActiveSpace(room.id);
+      setActiveSpace(room.id, client: room.client);
       return;
     }
 
-    context.go('/rooms/${room.id}');
+    // Switch here rather than leaving it to the `?client=` below, so the rail
+    // and the header agree about whose account this is on the same frame the
+    // chat opens. The route parameter still carries it, for the cold start
+    // where there is no list to have done this.
+    final otherClient = _activateOwner(room);
+
+    if (room.membership == Membership.leave) {
+      context.go(
+        roomRoute(
+          room.id,
+          prefix: '/rooms/archive',
+          clientName: otherClient?.clientName,
+        ),
+      );
+      return;
+    }
+
+    context.go(roomRoute(room.id, clientName: otherClient?.clientName));
   }
 
   bool Function(Room) getRoomFilterByActiveFilter(ActiveFilter activeFilter) {
@@ -151,9 +197,39 @@ class ChatListController extends State<ChatList>
     }
   }
 
-  List<Room> get filteredRooms => Matrix.of(
-    context,
-  ).client.rooms.where(getRoomFilterByActiveFilter(activeFilter)).toList();
+  /// The accounts the list draws from: every logged-in one when the unified
+  /// inbox is on, otherwise the active one alone.
+  List<Client> get roomListClients {
+    final matrix = Matrix.of(context);
+    if (!AppSettings.unifiedInbox.value) return [matrix.client];
+    final clients = matrix.widget.clients.where((c) => c.isLogged()).toList();
+    // One account is not a unified anything, and taking the merge path would
+    // re-sort a list the SDK has already ordered.
+    return clients.length > 1 ? clients : [matrix.client];
+  }
+
+  bool get isUnifiedInbox => roomListClients.length > 1;
+
+  /// Rebuilds the list on any shown account's sync. Listening to the active
+  /// account alone leaves the other one's rooms frozen: they never reorder
+  /// and their unread badges never clear.
+  Stream<SyncUpdate> get roomListSyncStream {
+    final clients = roomListClients;
+    if (clients.length == 1) return clients.single.onSync.stream;
+    return StreamGroup.merge(clients.map((client) => client.onSync.stream));
+  }
+
+  List<Room> get filteredRooms {
+    final clients = roomListClients;
+    return mergeAccountRooms(
+      clients.map((client) => client.rooms).toList(),
+      keep: getRoomFilterByActiveFilter(activeFilter),
+      // Every client sorts with the same comparator -- the app never sets a
+      // custom one -- so any of them orders the merged list the way each
+      // account's own list is already ordered.
+      compare: clients.first.defaultRoomSorter,
+    );
+  }
 
   bool isSearchMode = false;
   Future<QueryPublicRoomsResponse>? publicRoomsResponse;
@@ -383,7 +459,7 @@ class ChatListController extends State<ChatList>
     }
   }
 
-  StreamSubscription? _onRoomTagUpdate;
+  final List<StreamSubscription> _onRoomTagUpdate = [];
 
   /// Once per app start: land in the home room, the rolling
   /// conversation the app is "for". A deep link or notification that
@@ -426,19 +502,33 @@ class ChatListController extends State<ChatList>
     });
 
     _updateRoomTags();
-    _onRoomTagUpdate = Matrix.of(context).client.onSync.stream
-        .where(
-          (syncUpdate) =>
-              syncUpdate.rooms?.join?.values.any(
-                (roomUpdate) =>
-                    roomUpdate.accountData?.any(
-                      (accountData) => accountData.type == 'm.tag',
-                    ) ??
-                    false,
-              ) ??
-              false,
-        )
-        .listen(_updateRoomTags);
+    // The settings that shape this list -- the unified inbox, the rail -- are
+    // written on a page this one is still mounted behind. Rebuilding on the
+    // write is what makes the change land whole: the merged rooms, their
+    // badges, the tag counts and the set of accounts being listened to all
+    // change together instead of at the next sync, one at a time.
+    AppSettings.changes.addListener(_onSettingsChanged);
+    // Every account, not just the active one, because the unified inbox can
+    // be switched on while this list is mounted and the tag chips it draws
+    // would otherwise stop updating for the account that was not active when
+    // the list was built.
+    for (final client in Matrix.of(context).widget.clients) {
+      _onRoomTagUpdate.add(
+        client.onSync.stream
+            .where(
+              (syncUpdate) =>
+                  syncUpdate.rooms?.join?.values.any(
+                    (roomUpdate) =>
+                        roomUpdate.accountData?.any(
+                          (accountData) => accountData.type == 'm.tag',
+                        ) ??
+                        false,
+                  ) ??
+                  false,
+            )
+            .listen(_updateRoomTags),
+      );
+    }
 
     if (roomTags.containsKey(AppSettings.chatFilter.value)) {
       activeFilter = ActiveFilter.tag;
@@ -460,7 +550,10 @@ class ChatListController extends State<ChatList>
   void dispose() {
     _intentDataStreamSubscription?.cancel();
     _intentFileStreamSubscription?.cancel();
-    _onRoomTagUpdate?.cancel();
+    for (final subscription in _onRoomTagUpdate) {
+      subscription.cancel();
+    }
+    AppSettings.changes.removeListener(_onSettingsChanged);
     scrollController.removeListener(_onScroll);
     searchRequests.removeListener(_onSearchRequested);
     searchController.dispose();
@@ -523,6 +616,11 @@ class ChatListController extends State<ChatList>
               mainAxisSize: .min,
               children: [
                 Avatar(
+                  // The space belongs to the room's account, which is not
+                  // necessarily the active one; MxcImage falls back to the
+                  // active client and would fetch the media on an account
+                  // that cannot see it.
+                  client: space.client,
                   mxContent: space.avatar,
                   size: Avatar.defaultSize / 2,
                   name: space.getLocalizedDisplayname(),
@@ -722,7 +820,7 @@ class ChatListController extends State<ChatList>
 
     switch (action) {
       case ChatContextAction.goToSpace:
-        setActiveSpace(space!.id);
+        setActiveSpace(space!.id, client: space.client);
         return;
       case ChatContextAction.favorite:
         await showFutureLoadingDialog(
@@ -752,6 +850,10 @@ class ChatListController extends State<ChatList>
           EventTypes.RoomMember,
           room.client.userID!,
         );
+        // The ignore list is per account and edits the active one, so
+        // blocking from another account's invite has to switch first or it
+        // ignores the user on the wrong account and leaves the invite there.
+        _activateOwner(room);
         context.go(
           '/rooms/settings/security/ignorelist',
           extra: inviteEvent?.senderId,
@@ -847,11 +949,19 @@ class ChatListController extends State<ChatList>
 
   Map<String, int> roomTags = {};
 
+  /// A settings write recomputes the tags and, through the setState inside,
+  /// rebuilds the list against whatever the setting now says.
+  void _onSettingsChanged() {
+    if (mounted) _updateRoomTags();
+  }
+
   void _updateRoomTags([_]) {
     roomTags.clear();
-    for (final room in Matrix.of(context).client.rooms) {
-      for (final tag in room.tags.keys) {
-        if (tag.startsWith('u.')) roomTags[tag] = (roomTags[tag] ?? 0) + 1;
+    for (final client in roomListClients) {
+      for (final room in client.rooms) {
+        for (final tag in room.tags.keys) {
+          if (tag.startsWith('u.')) roomTags[tag] = (roomTags[tag] ?? 0) + 1;
+        }
       }
     }
     setState(() {

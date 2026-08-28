@@ -11,6 +11,7 @@ import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
 import 'package:fluffychat/pages/chat_list/space_view.dart';
+import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/public_room_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -19,7 +20,6 @@ import 'package:matrix/matrix.dart';
 
 import '../../config/themes.dart';
 import '../../widgets/adaptive_dialogs/user_dialog.dart';
-import '../../widgets/matrix.dart';
 import 'chat_list_header.dart';
 
 class ChatListViewBody extends StatelessWidget {
@@ -31,7 +31,6 @@ class ChatListViewBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final client = Matrix.of(context).client;
     final activeSpace = controller.activeSpaceId;
     if (activeSpace != null) {
       return SpaceView(
@@ -42,13 +41,32 @@ class ChatListViewBody extends StatelessWidget {
         activeChat: controller.activeChat,
       );
     }
-    final spaces = client.rooms.where((r) => r.isSpace);
-    final spaceDelegateCandidates = <String, Room>{};
+    // One account outside the unified inbox, so everything below reads the
+    // same as it did when it named the active client directly.
+    final clients = controller.roomListClients;
+    final unified = controller.isUnifiedInbox;
+    // Computed over the whole set, because what makes one account's badge
+    // readable is which other accounts it has to differ from.
+    final accountLabels = unified
+        ? accountBadgeLabels(
+            clients.map(
+              (client) =>
+                  (clientName: client.clientName, userId: client.userID ?? ''),
+            ),
+          )
+        : const <String, String>{};
+    final anySynced = clients.any((client) => client.prevBatch != null);
+    final spaces = clients
+        .expand((client) => client.rooms)
+        .where((r) => r.isSpace);
+    // Keyed by account as well as room, or one account's space claims the
+    // other account's copy of a room they are both in.
+    final spaceDelegateCandidates = <RoomRef, Room>{};
     for (final space in spaces) {
       for (final spaceChild in space.spaceChildren) {
         final roomId = spaceChild.roomId;
         if (roomId == null) continue;
-        spaceDelegateCandidates[roomId] = space;
+        spaceDelegateCandidates[(space.client.clientName, roomId)] = space;
       }
     }
 
@@ -62,8 +80,8 @@ class ChatListViewBody extends StatelessWidget {
     const dummyChatCount = 4;
     final filter = controller.searchController.text.toLowerCase();
     return StreamBuilder(
-      key: ValueKey(client.userID.toString()),
-      stream: client.onSync.stream
+      key: ValueKey(clients.map((client) => client.userID).join(',')),
+      stream: controller.roomListSyncStream
           .where((s) => s.hasRoomUpdate)
           .rateLimit(const Duration(seconds: 1)),
       builder: (context, _) {
@@ -71,7 +89,8 @@ class ChatListViewBody extends StatelessWidget {
             .where(
               (room) =>
                   !AppSettings.hideRoomsInSpaces.value ||
-                  spaceDelegateCandidates[room.id] == null,
+                  spaceDelegateCandidates[(room.client.clientName, room.id)] ==
+                      null,
             )
             .toList();
 
@@ -128,7 +147,8 @@ class ChatListViewBody extends StatelessWidget {
                           ),
                   ),
                 ],
-                if (client.rooms.isNotEmpty && !controller.isSearchMode)
+                if (clients.any((client) => client.rooms.isNotEmpty) &&
+                    !controller.isSearchMode)
                   Container(
                     height: 36 + 8 + 8,
                     padding: EdgeInsets.symmetric(vertical: 8),
@@ -181,9 +201,7 @@ class ChatListViewBody extends StatelessWidget {
                     title: L10n.of(context).chats,
                     icon: const Icon(Icons.forum_outlined),
                   ),
-                if (client.prevBatch != null &&
-                    rooms.isEmpty &&
-                    !controller.isSearchMode) ...[
+                if (anySynced && rooms.isEmpty && !controller.isSearchMode) ...[
                   Column(
                     mainAxisAlignment: .center,
                     children: [
@@ -207,7 +225,7 @@ class ChatListViewBody extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Text(
-                          client.rooms.isEmpty
+                          clients.every((client) => client.rooms.isEmpty)
                               ? L10n.of(context).noChatsFoundHere
                               : L10n.of(context).noMoreChatsFound,
                           textAlign: TextAlign.center,
@@ -222,7 +240,7 @@ class ChatListViewBody extends StatelessWidget {
                 ],
               ]),
             ),
-            if (client.prevBatch == null)
+            if (!anySynced)
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => DummyChatListItem(
@@ -232,23 +250,34 @@ class ChatListViewBody extends StatelessWidget {
                   childCount: dummyChatCount,
                 ),
               ),
-            if (client.prevBatch != null)
+            if (anySynced)
               SliverSafeArea(
                 top: false,
                 sliver: SliverList.builder(
                   itemCount: rooms.length,
                   itemBuilder: (BuildContext context, int i) {
                     final room = rooms[i];
-                    final space = spaceDelegateCandidates[room.id];
+                    final ref = (room.client.clientName, room.id);
+                    final space = spaceDelegateCandidates[ref];
                     return ChatListItem(
                       room,
                       space: space,
-                      key: Key('chat_list_item_${room.id}'),
+                      account: unified
+                          ? (
+                              // The id names the account, the client name
+                              // identifies it: the two part company when the
+                              // same account is logged in twice.
+                              userId: room.client.userID ?? '',
+                              label:
+                                  accountLabels[room.client.clientName] ?? '',
+                            )
+                          : null,
+                      key: ValueKey(ref),
                       filter: filter,
                       onTap: () => controller.onChatTap(room),
                       onLongPress: (context) =>
                           controller.chatContextAction(room, context, space),
-                      activeChat: controller.activeChat == room.id,
+                      activeChat: controller.isActiveChat(room),
                     );
                   },
                 ),

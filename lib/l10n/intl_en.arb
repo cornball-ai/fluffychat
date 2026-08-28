@@ -2803,6 +2803,8 @@
     "unmuteMicrophone": "Unmute microphone",
     "messageEmptied": "Message removed",
     "showNavigationRailWide": "Show navigation rail in wide windows",
+    "unifiedInbox": "One chat list for all accounts",
+    "unifiedInboxDescription": "Show every account's chats together, sorted by time. Spaces stay per account.",
     "voiceModeListening": "Listening…",
     "voiceModeSpeaking": "Speaking…",
     "voiceModeMuted": "Muted"
