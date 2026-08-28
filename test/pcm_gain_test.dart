@@ -61,24 +61,31 @@ void main() {
     expect(_rms(last!), closeTo(0.1, 0.02));
   });
 
-  test('one loud syllable does not quieten the rest of the reply', () {
-    // The regression, reported from listening to it: the reply started at a
-    // decent volume and then went quiet and stayed quiet. The old gain
-    // divided the whole reply down by the loudest sample it had seen, so
-    // the first emphatic word set the level for everything after it.
+  test('a reply does not stay quiet after one loud syllable', () {
+    // The regression, reported from listening to it: the reply starts at a
+    // decent volume and then goes quiet and stays quiet. A gain that can
+    // only ever fall does exactly that -- the first emphatic word sets the
+    // level for every word after it, for the rest of the reply.
+    //
+    // The property is recovery, so the test has to look at the rest of the
+    // reply and not just the next chunk. Checking the chunk immediately
+    // after passes even with the ratchet reinstated, because one chunk of
+    // ducking is what a compressor is supposed to do.
     final gain = SpeechGain();
     for (var i = 0; i < 6; i++) {
       gain.apply(_tone(1600), sampleRateHz: _rate);
     }
-    final before = _rms(_applied(gain, _tone(1600)));
 
     // A plosive: brief, and 20 dB above the words around it.
     gain.apply(_tone(16000, samples: _rate ~/ 20), sampleRateHz: _rate);
 
-    final after = _rms(_applied(gain, _tone(1600)));
-    // Some ducking is a compressor doing its job; an order of magnitude is
-    // the bug.
-    expect(after, greaterThan(before * 0.7));
+    // The sentence carries on at the level it had before.
+    Uint8List? last;
+    for (var i = 0; i < 6; i++) {
+      last = _tone(1600);
+      gain.apply(last, sampleRateHz: _rate);
+    }
+    expect(_rms(last!), closeTo(0.1, 0.02));
   });
 
   test('a synthesiser that already runs hot is left alone', () {
@@ -150,6 +157,9 @@ void main() {
     rising.apply(_tone(800), sampleRateHz: _rate);
     final climb = rising.gain - low;
 
+    // Both directions have to be real. A gain that only ever falls also
+    // satisfies drop > climb, and that gain is the bug.
+    expect(climb, greaterThan(0));
     expect(drop, greaterThan(climb));
   });
 
@@ -189,10 +199,4 @@ void main() {
     expect(gain.peakDbfs, closeTo(-20, 0.5));
     expect(gain.rmsDbfs, closeTo(-23, 1.0));
   });
-}
-
-/// Applies the gain and hands the chunk back, for reading its level.
-Uint8List _applied(SpeechGain gain, Uint8List pcm) {
-  gain.apply(pcm, sampleRateHz: _rate);
-  return pcm;
 }
