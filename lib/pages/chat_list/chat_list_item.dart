@@ -6,6 +6,7 @@
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/active_call_indicator.dart';
+import 'package:fluffychat/pages/chat_list/account_badge.dart';
 import 'package:fluffychat/pages/chat_list/unread_bubble.dart';
 import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
@@ -30,6 +31,12 @@ class ChatListItem extends StatelessWidget {
   final void Function() onTap;
   final String? filter;
 
+  /// Which account the room belongs to, badged on the avatar for the unified
+  /// inbox where the list spans several. Null everywhere else, and the row
+  /// draws exactly as it always did. The label comes from the list, which is
+  /// the only place that knows which accounts have to be told apart.
+  final ({String userId, String label})? account;
+
   const ChatListItem(
     this.room, {
     this.activeChat = false,
@@ -38,6 +45,7 @@ class ChatListItem extends StatelessWidget {
     this.onForget,
     this.filter,
     this.space,
+    this.account,
     super.key,
   });
 
@@ -66,7 +74,11 @@ class ChatListItem extends StatelessWidget {
     final needLastEventSender =
         lastEvent != null &&
         room.getState(EventTypes.RoomMember, lastEvent.senderId) == null;
-    final space = this.space;
+    final account = this.account;
+    // Both want the same corner, and in a list that spans accounts whose
+    // account it is beats which space it came from: the space is still one
+    // long-press away, the account is written nowhere else on the row.
+    final space = account == null ? this.space : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -96,6 +108,7 @@ class ChatListItem extends StatelessWidget {
                             top: 0,
                             left: 0,
                             child: Avatar(
+                              client: room.client,
                               shapeBorder: RoundedSuperellipseBorder(
                                 side: BorderSide(
                                   width: 2,
@@ -120,6 +133,7 @@ class ChatListItem extends StatelessWidget {
                           bottom: 0,
                           right: 0,
                           child: Avatar(
+                            client: room.client,
                             shapeBorder: space == null
                                 ? room.isSpace
                                       ? RoundedSuperellipseBorder(
@@ -158,6 +172,17 @@ class ChatListItem extends StatelessWidget {
                             onTap: () => onLongPress?.call(context),
                           ),
                         ),
+                        if (account != null)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: AccountBadge(
+                              userId: account.userId,
+                              label: account.label,
+                              borderColor:
+                                  backgroundColor ?? theme.colorScheme.surface,
+                            ),
+                          ),
                         Positioned(
                           top: 0,
                           right: 0,
