@@ -83,12 +83,34 @@ class MatrixState extends State<Matrix> {
   int getClientIndexByMatrixId(String matrixId) =>
       widget.clients.indexWhere((client) => client.userID == matrixId);
 
+  /// Bumped when the active account actually changes.
+  ///
+  /// A notifier rather than setState, because this State's build returns
+  /// `widget.child` untouched: rebuilding here hands Flutter the same widget
+  /// instance and changes nothing below it.
+  ///
+  /// Something has to carry the signal, because the router's page builder
+  /// switches accounts on `?client=` in the middle of a build, after the
+  /// chat list has already built that frame against the account it came
+  /// from. Nothing then asked it to look again, so a jump to another
+  /// account's room opened the right chat and left the list highlighting the
+  /// wrong row until an unrelated sync happened along.
+  final ValueNotifier<int> activeClientChanged = ValueNotifier(0);
+
   void setActiveClient(Client? cl) {
     final i = widget.clients.indexWhere((c) => c == cl);
     if (i != -1) {
+      final changed = i != _activeClient;
       _activeClient = i;
       // TODO: Multi-client VoiP support
       createVoipPlugin();
+      // After the frame, since a listener will call setState and this runs
+      // during one.
+      if (changed) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => activeClientChanged.value++,
+        );
+      }
     } else {
       Logs().w('Tried to set an unknown client ${cl!.userID} as active');
     }
@@ -380,6 +402,7 @@ class MatrixState extends State<Matrix> {
   @override
   void dispose() {
     _listener?.dispose();
+    activeClientChanged.dispose();
 
     for (final sub in onRoomKeyRequestSub.values) {
       sub.cancel();
