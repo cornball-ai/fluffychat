@@ -17,6 +17,7 @@ import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/room_read_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/room_list_clients.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
@@ -199,16 +200,9 @@ class ChatListController extends State<ChatList>
     }
   }
 
-  /// The accounts the list draws from: every logged-in one when the unified
-  /// inbox is on, otherwise the active one alone.
-  List<Client> get roomListClients {
-    final matrix = Matrix.of(context);
-    if (!AppSettings.unifiedInbox.value) return [matrix.client];
-    final clients = matrix.widget.clients.where((c) => c.isLogged()).toList();
-    // One account is not a unified anything, and taking the merge path would
-    // re-sort a list the SDK has already ordered.
-    return clients.length > 1 ? clients : [matrix.client];
-  }
+  /// The accounts the list draws from. Shared with everything else that has
+  /// to agree about which rooms are on screen.
+  List<Client> get roomListClients => roomListClientsFor(Matrix.of(context));
 
   bool get isUnifiedInbox => roomListClients.length > 1;
 
