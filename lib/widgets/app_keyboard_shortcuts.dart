@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
+import 'package:fluffychat/pages/chat_list/unified_rooms.dart';
+import 'package:fluffychat/utils/room_list_clients.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/services.dart';
@@ -12,10 +14,15 @@ import 'package:material_ui/material_ui.dart';
 /// App-wide desktop keyboard shortcuts.
 ///
 /// Ctrl+1..9 (also Cmd+1..9 for macOS) jumps to the nth chat,
-/// Signal-style. The list is the client's activity-sorted rooms with
-/// spaces excluded, which matches the default chat list ordering. The
-/// bindings work while a text field has focus, so switching chats does
-/// not require leaving the composer.
+/// Signal-style. The list is every shown account's activity-sorted rooms
+/// with spaces excluded, built from the same pieces the chat list uses so
+/// that the third chat here is the third chat on screen. The bindings work
+/// while a text field has focus, so switching chats does not require
+/// leaving the composer.
+///
+/// It does not follow the active filter: with "unread" selected the chat
+/// list shows a subset and these still count the whole list. That was true
+/// before the unified inbox and is left alone here.
 ///
 /// Ctrl+F (also Cmd+F) opens search for whatever is in front of the
 /// user: the open conversation's own search route, or failing that the
@@ -39,11 +46,23 @@ class AppKeyboardShortcuts extends StatelessWidget {
 
   /// Go to the [number]th chat (1-based) in the room list.
   void _goToChat(BuildContext context, int number) {
-    final client = Matrix.of(context).client;
-    if (!client.isLogged()) return;
-    final rooms = client.rooms.where((room) => !room.isSpace).toList();
+    final matrix = Matrix.of(context);
+    final clients = roomListClientsFor(
+      matrix,
+    ).where((client) => client.isLogged()).toList();
+    if (clients.isEmpty) return;
+    final rooms = mergeAccountRooms(
+      clients.map((client) => client.rooms).toList(),
+      keep: (room) => !room.isSpace,
+      compare: clients.first.defaultRoomSorter,
+    );
     if (number > rooms.length) return;
-    FluffyChatApp.router.go('/rooms/${rooms[number - 1].id}');
+    final room = rooms[number - 1];
+    // The room may belong to an account that is not the active one, and the
+    // chat page resolves the id against whichever is. The route parameter is
+    // what switches it, the same way tapping the row does.
+    final owner = room.client == matrix.client ? null : room.client;
+    FluffyChatApp.router.go(roomRoute(room.id, clientName: owner?.clientName));
   }
 
   /// The search route ctrl+F should open from [route], or null when the
