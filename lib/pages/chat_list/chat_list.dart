@@ -628,6 +628,12 @@ class ChatListController extends State<ChatList>
     // badges, the tag counts and the set of accounts being listened to all
     // change together instead of at the next sync, one at a time.
     AppSettings.changes.addListener(_onSettingsChanged);
+    // Which account is active decides which row is the open one, which
+    // spaces the rail shows and whose profile the header carries, and it can
+    // change without this list doing it -- a route carrying ?client= switches
+    // accounts from inside the router.
+    _matrix = Matrix.of(context)
+      ..activeClientChanged.addListener(_onActiveClientChanged);
     // Every account, not just the active one, because the unified inbox can
     // be switched on while this list is mounted and the tag chips it draws
     // would otherwise stop updating for the account that was not active when
@@ -675,6 +681,7 @@ class ChatListController extends State<ChatList>
       subscription.cancel();
     }
     AppSettings.changes.removeListener(_onSettingsChanged);
+    _matrix?.activeClientChanged.removeListener(_onActiveClientChanged);
     scrollController.removeListener(_onScroll);
     searchRequests.removeListener(_onSearchRequested);
     searchController.dispose();
@@ -1074,6 +1081,14 @@ class ChatListController extends State<ChatList>
   /// rebuilds the list against whatever the setting now says.
   void _onSettingsChanged() {
     if (mounted) _updateRoomTags();
+  }
+
+  /// Held from initState so the listener can be removed without reaching for
+  /// a BuildContext during dispose.
+  MatrixState? _matrix;
+
+  void _onActiveClientChanged() {
+    if (mounted) setState(() {});
   }
 
   void _updateRoomTags([_]) {
