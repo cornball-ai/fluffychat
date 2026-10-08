@@ -213,6 +213,23 @@ extension MatrixRtcRoomExtension on Room {
       deviceKeys.removeWhere((d) => !d.encryptToDevice);
     }
 
+    // The recipient may be an always-initiating peer (e.g. an agent/bot) that
+    // never keeps an inbound Olm session, so a reply on a session we initiated
+    // -- an established, type-1 message -- can never be decrypted there. Force a
+    // fresh outbound session per recipient first: the call key then goes as a
+    // type-0 prekey, from which any recipient can build an inbound and decrypt,
+    // regardless of Olm session history or divergence. Scoped to the call-key
+    // send; ordinary to-device traffic keeps its normal session reuse.
+    if (deviceKeys.isNotEmpty) {
+      try {
+        await client.encryption?.olmManager.startOutgoingOlmSessions(
+          deviceKeys,
+        );
+      } catch (e, s) {
+        Logs().w('Could not start fresh Olm sessions for call key', e, s);
+      }
+    }
+
     try {
       await client.sendToDeviceEncrypted(
         deviceKeys,
