@@ -252,18 +252,25 @@ class CallViewModel extends ValueNotifier<CallViewModelState> {
     if (room.isDirectChat && room.hasActiveMatrixRtcCall) {
       await connect();
     } else {
-      value.localVideoTrack = await lk.LocalVideoTrack.createCameraTrack();
-      if (room.getActiveMatrixRtcMembers().firstOrNull?.callIntent == .voice) {
-        value.localVideoTrack?.mute();
-      }
-      value.localVideoTrack?.addListener(notifyListeners);
+      // Don't open the webcam just to show a lobby preview. On Linux the native
+      // camera open blocks the UI thread for several seconds (the app shows
+      // "not responding"), and for a voice call the track is only muted and
+      // thrown away. Start the lobby with the camera off; togglePreviewCamera
+      // opens it on demand when the user actually wants video, so a voice call
+      // never touches the camera and only video pays the open cost.
       notifyListeners();
     }
   }
 
   Future<void> togglePreviewCamera() async {
     final track = value.localVideoTrack;
-    if (track == null) return;
+    if (track == null) {
+      // First time enabling video in the lobby: open the camera now.
+      value.localVideoTrack = await lk.LocalVideoTrack.createCameraTrack();
+      value.localVideoTrack?.addListener(notifyListeners);
+      notifyListeners();
+      return;
+    }
     if (!track.muted) {
       await track.mute();
       return;

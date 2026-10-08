@@ -506,9 +506,7 @@ class CallPage extends StatelessWidget {
                       style: iconButtonStyle,
                       onPressed: viewModel.value.isLoading
                           ? null
-                          : localVideoTrack != null
-                          ? viewModel.togglePreviewCamera
-                          : null,
+                          : viewModel.togglePreviewCamera,
                       icon: Icon(
                         !(localVideoTrack?.muted ?? true)
                             ? Icons.videocam_outlined
