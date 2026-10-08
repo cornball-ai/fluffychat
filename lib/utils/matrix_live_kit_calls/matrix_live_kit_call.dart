@@ -213,24 +213,60 @@ extension MatrixRtcRoomExtension on Room {
       deviceKeys.removeWhere((d) => !d.encryptToDevice);
     }
 
+    // The recipient may be an always-initiating peer (e.g. an agent/bot) that
+    // never keeps an inbound Olm session, so a reply on a session we initiated
+    // -- an established, type-1 message -- can never be decrypted there. Force a
+    // fresh outbound session per recipient first: the call key then goes as a
+    // type-0 prekey, from which any recipient can build an inbound and decrypt,
+    // regardless of Olm session history or divergence. Scoped to the call-key
+    // send; ordinary to-device traffic keeps its normal session reuse.
+    if (deviceKeys.isNotEmpty) {
+      try {
+        await client.encryption?.olmManager.startOutgoingOlmSessions(
+          deviceKeys,
+        );
+      } catch (e, s) {
+        Logs().w('Could not start fresh Olm sessions for call key', e, s);
+      }
+    }
+
+    final content = CallKeysEventContent(
+      keys: [CallKeysEntry(index: index, key: base64Encode(key))],
+      member: CallKeysMember(
+        id: memberId,
+        claimedDeviceId: client.deviceID!,
+      ),
+      roomId: id,
+      sentTs: DateTime.now().millisecondsSinceEpoch,
+      session: CallKeysSession(
+        application: 'm.call',
+        callId: '',
+        scope: 'm.room',
+      ),
+    );
+
+    // Dispatch the key in BOTH on-wire shapes so every peer can read one of
+    // them: the spec/MatrixRTC array form (Element Call, agents) and the legacy
+    // single-object form (FluffyChat <= 2.10, which hard-throws on an array and
+    // so can read only the object form). A peer reads the shape it understands
+    // and catches the parse error on the other.
+    //
+    // Array first: it rides the fresh prekey (type-0) started above, which an
+    // always-initiating peer with no inbound session needs. The object event
+    // follows on that now-established session (type-1); to-device delivery is
+    // ordered, so a stock-FluffyChat peer processes the prekey first (building
+    // its inbound session even though it throws on the array content), then
+    // decrypts and applies this object event.
     try {
       await client.sendToDeviceEncrypted(
         deviceKeys,
         CallKeysEventContent.eventType,
-        CallKeysEventContent(
-          keys: [CallKeysEntry(index: index, key: base64Encode(key))],
-          member: CallKeysMember(
-            id: memberId,
-            claimedDeviceId: client.deviceID!,
-          ),
-          roomId: id,
-          sentTs: DateTime.now().millisecondsSinceEpoch,
-          session: CallKeysSession(
-            application: 'm.call',
-            callId: '',
-            scope: 'm.room',
-          ),
-        ).toJson(),
+        content.toJson(),
+      );
+      await client.sendToDeviceEncrypted(
+        deviceKeys,
+        CallKeysEventContent.eventType,
+        content.toJson(legacyObjectKeys: true),
       );
       Logs().d(
         'Dispatched call keys to',

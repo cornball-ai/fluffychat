@@ -64,6 +64,26 @@ void main() {
       ]);
     });
 
+    test('emits the legacy single-object form for stock FluffyChat', () {
+      final content = CallKeysEventContent(
+        keys: [CallKeysEntry(index: 7, key: 'DDDD')],
+        member: CallKeysMember(id: '@a:b.c', claimedDeviceId: 'DEV'),
+        roomId: '!room:b.c',
+        session: CallKeysSession(
+          application: 'm.call',
+          callId: '',
+          scope: 'm.room',
+        ),
+      );
+      final legacy = content.toJson(legacyObjectKeys: true);
+      expect(legacy['keys'], isA<Map<String, Object?>>());
+      expect(legacy['keys'], {'index': 7, 'key': 'DDDD'});
+      // The legacy object shape must re-parse to the same single entry.
+      final reparsed = CallKeysEventContent.fromJson(legacy);
+      expect(reparsed.keys.single.index, 7);
+      expect(reparsed.keys.single.key, 'DDDD');
+    });
+
     test('round-trips the array form', () {
       final original = contentWith([
         {'index': 2, 'key': 'EEEE'},
