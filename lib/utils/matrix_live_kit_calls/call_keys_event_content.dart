@@ -76,8 +76,15 @@ class CallKeysEventContent {
     return [];
   }
 
-  Map<String, Object?> toJson() => {
-    'keys': keys.map((entry) => entry.toJson()).toList(),
+  // Default emits the spec/MatrixRTC array form. `legacyObjectKeys` emits the
+  // single-object form that FluffyChat <= 2.10 expects: it casts `keys` to a Map
+  // and throws on an array, so a stock-FluffyChat peer can only read the object
+  // form. We dispatch both shapes (see shareMatrixRtcCallKey) so every peer can
+  // read one of them; the legacy form carries the first (current) key only.
+  Map<String, Object?> toJson({bool legacyObjectKeys = false}) => {
+    'keys': legacyObjectKeys
+        ? (keys.isNotEmpty ? keys.first.toJson() : <String, Object?>{})
+        : keys.map((entry) => entry.toJson()).toList(),
     'member': member.toJson(),
     'room_id': roomId,
     'session': session.toJson(),
