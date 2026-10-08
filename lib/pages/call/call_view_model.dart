@@ -77,11 +77,15 @@ class CallViewModel extends ValueNotifier<CallViewModelState> {
       return;
     }
 
-    await keyProvider.setRawKey(
-      base64Decode(callKeys.keys.key),
-      participantId: '${event.sender}:${callKeys.member.claimedDeviceId}',
-      keyIndex: callKeys.keys.index,
-    );
+    final participantId =
+        '${event.sender}:${callKeys.member.claimedDeviceId}';
+    for (final entry in callKeys.keys) {
+      await keyProvider.setRawKey(
+        base64Decode(entry.key),
+        participantId: participantId,
+        keyIndex: entry.index,
+      );
+    }
   }
 
   Future<void> _createKeyAndShare() async {
@@ -401,7 +405,14 @@ class CallViewModel extends ValueNotifier<CallViewModelState> {
           callKitId = params.id;
         }
       }
-      if (playWaitingSound) {
+      // Only ring if we are genuinely alone. A participant that reached the SFU
+      // before us -- e.g. an agent that answers the moment it sees our call
+      // membership -- is already in remoteParticipants here and never fires a
+      // ParticipantConnectedEvent, so without this check the call rings forever
+      // even though the other side is present (and publishing).
+      final otherSideAlreadyPresent =
+          value.room?.remoteParticipants.isNotEmpty ?? false;
+      if (playWaitingSound && !otherSideAlreadyPresent) {
         waitForOtherSide = true;
         _playWaitingSound();
       } else {

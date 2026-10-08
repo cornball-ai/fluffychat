@@ -25,14 +25,14 @@ class CallKeysEvent extends ToDeviceEvent {
       CallKeysEventContent.fromJson(super.content);
 
   String get key =>
-      String.fromCharCodes(base64Decode(callKeysContent.keys.key));
+      String.fromCharCodes(base64Decode(callKeysContent.keys.first.key));
 }
 
 /// To-device event content for encryption key exchange (EncryptionKeysToDeviceEventContent).
 class CallKeysEventContent {
   static const String eventType = 'io.element.call.encryption_keys';
 
-  final CallKeysEntry keys;
+  final List<CallKeysEntry> keys;
   final CallKeysMember member;
   final String roomId;
   final CallKeysSession session;
@@ -48,9 +48,7 @@ class CallKeysEventContent {
 
   factory CallKeysEventContent.fromJson(Map<String, Object?> json) =>
       CallKeysEventContent(
-        keys: CallKeysEntry.fromJson(
-          Map<String, Object?>.from(json['keys'] as Map),
-        ),
+        keys: _parseKeys(json['keys']),
         member: CallKeysMember.fromJson(
           Map<String, Object?>.from(json['member'] as Map),
         ),
@@ -61,8 +59,25 @@ class CallKeysEventContent {
         sentTs: json['sent_ts'] as int?,
       );
 
+  // MatrixRTC/Element Call send `keys` as an array of {index, key} (to carry a
+  // rotating set of keys). FluffyChat <= 2.10 sends and expects a single object
+  // instead, so a FluffyChat<->Element/agent call fails to decrypt both ways.
+  // Read both shapes; we emit the array form so Element-spec peers can read us.
+  static List<CallKeysEntry> _parseKeys(Object? raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((e) => CallKeysEntry.fromJson(Map<String, Object?>.from(e)))
+          .toList();
+    }
+    if (raw is Map) {
+      return [CallKeysEntry.fromJson(Map<String, Object?>.from(raw))];
+    }
+    return [];
+  }
+
   Map<String, Object?> toJson() => {
-    'keys': keys.toJson(),
+    'keys': keys.map((entry) => entry.toJson()).toList(),
     'member': member.toJson(),
     'room_id': roomId,
     'session': session.toJson(),
