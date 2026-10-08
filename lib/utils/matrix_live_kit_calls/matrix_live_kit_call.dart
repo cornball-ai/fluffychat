@@ -213,21 +213,32 @@ extension MatrixRtcRoomExtension on Room {
       deviceKeys.removeWhere((d) => !d.encryptToDevice);
     }
 
-    await client.sendToDeviceEncrypted(
-      deviceKeys,
-      CallKeysEventContent.eventType,
-      CallKeysEventContent(
-        keys: CallKeysEntry(index: index, key: base64Encode(key)),
-        member: CallKeysMember(id: memberId, claimedDeviceId: client.deviceID!),
-        roomId: id,
-        sentTs: DateTime.now().millisecondsSinceEpoch,
-        session: CallKeysSession(
-          application: 'm.call',
-          callId: '',
-          scope: 'm.room',
-        ),
-      ).toJson(),
-    );
+    try {
+      await client.sendToDeviceEncrypted(
+        deviceKeys,
+        CallKeysEventContent.eventType,
+        CallKeysEventContent(
+          keys: [CallKeysEntry(index: index, key: base64Encode(key))],
+          member: CallKeysMember(
+            id: memberId,
+            claimedDeviceId: client.deviceID!,
+          ),
+          roomId: id,
+          sentTs: DateTime.now().millisecondsSinceEpoch,
+          session: CallKeysSession(
+            application: 'm.call',
+            callId: '',
+            scope: 'm.room',
+          ),
+        ).toJson(),
+      );
+      Logs().d(
+        'Dispatched call keys to',
+        deviceKeys.map((k) => '${k.userId}:${k.deviceId}'),
+      );
+    } catch (e, s) {
+      Logs().e('Failed to dispatch call keys', e, s);
+    }
   }
 
   Future<MatrixRtcCredentials> joinMatrixRtcCall({
