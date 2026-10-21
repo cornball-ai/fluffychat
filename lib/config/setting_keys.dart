@@ -77,11 +77,6 @@ enum AppSettings<T> {
   /// account's alone. Off by default: a single-account user gets nothing out
   /// of it, and it is the merged path that carries the risk.
   unifiedInbox<bool>('chat.fluffy.unified_inbox', false),
-  experimentalLiveVoice<bool>('chat.fluffy.experimental_live_voice', false),
-  // The voice agent's gRPC address as host:port. Plain means an insecure
-  // channel (normal when the link is already WireGuard); a tls:// prefix
-  // means TLS. Empty disables live voice regardless of the flag above.
-  liveVoiceAgent<String>('chat.fluffy.live_voice_agent', ''),
   shareKeysWith<String>('chat.fluffy.share_keys_with_2', 'all'),
   noEncryptionWarningShown<bool>(
     'chat.fluffy.no_encryption_warning_shown',
