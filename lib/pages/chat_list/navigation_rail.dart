@@ -72,7 +72,7 @@ class SpacesNavigationRail extends StatelessWidget {
                     .rateLimit(const Duration(seconds: 1)),
           builder: (context, _) {
             final allSpaces = client.rooms
-                .where((room) => room.isSpace)
+                .where((room) => room.isSpace && room.membership == .join)
                 .toList();
 
             return SizedBox(
