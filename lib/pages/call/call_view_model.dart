@@ -77,8 +77,7 @@ class CallViewModel extends ValueNotifier<CallViewModelState> {
       return;
     }
 
-    final participantId =
-        '${event.sender}:${callKeys.member.claimedDeviceId}';
+    final participantId = '${event.sender}:${callKeys.member.claimedDeviceId}';
     for (final entry in callKeys.keys) {
       await keyProvider.setRawKey(
         base64Decode(entry.key),

@@ -232,10 +232,7 @@ extension MatrixRtcRoomExtension on Room {
 
     final content = CallKeysEventContent(
       keys: [CallKeysEntry(index: index, key: base64Encode(key))],
-      member: CallKeysMember(
-        id: memberId,
-        claimedDeviceId: client.deviceID!,
-      ),
+      member: CallKeysMember(id: memberId, claimedDeviceId: client.deviceID!),
       roomId: id,
       sentTs: DateTime.now().millisecondsSinceEpoch,
       session: CallKeysSession(
