@@ -11,7 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fork: these jobs publish to upstream's targets with upstream's secrets,
+  # so they run only in krille-chan/fluffychat.
   deploy_web:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -48,6 +51,7 @@ jobs:
           keep_files: true
 
   deploy_playstore_internal:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy_playstore
