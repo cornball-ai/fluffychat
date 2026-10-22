@@ -14,7 +14,10 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Fork: these jobs publish to upstream's targets with upstream's secrets,
+  # so they run only in krille-chan/fluffychat.
   build_web:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -70,6 +73,7 @@ jobs:
           cname: fluffychat.im
 
   build_apk:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -102,6 +106,7 @@ jobs:
           asset_content_type: application/vnd.android.package-archive
 
   build_linux:
+    if: github.repository == 'krille-chan/fluffychat'
     strategy:
       matrix:
         arch: [ x64, arm64 ]
@@ -131,6 +136,7 @@ jobs:
           asset_content_type: application/gzip
 
   deploy_snapstore:
+    if: github.repository == 'krille-chan/fluffychat'
     strategy:
       matrix:
         arch: [ x64, arm64 ]
@@ -155,6 +161,7 @@ jobs:
           release: ${{ steps.channel.outputs.channel }}
 
   build_windows:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -178,6 +185,7 @@ jobs:
           asset_content_type: application/vnd.microsoft.portable-executable
 
   deploy_playstore:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy_playstore
@@ -228,6 +236,7 @@ jobs:
           cd ..
 
   deploy_docker:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -255,6 +264,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy_ios_appstore:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
@@ -286,6 +296,7 @@ jobs:
         working-directory: ios
 
   deploy_macos_appstore:
+    if: github.repository == 'krille-chan/fluffychat'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
