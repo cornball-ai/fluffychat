@@ -42,4 +42,4 @@ maintained here.
   from code; CI runs `sweeper check` for unused keys. Upstream's translations
   come from Weblate and are not edited here.
 - Fork-only code lives in its own directories where possible, such as
-  `lib/utils/voice/` and `proto/`, so upstream merges touch few shared files.
+  `lib/utils/sender_trust/`, so upstream merges touch few shared files.
