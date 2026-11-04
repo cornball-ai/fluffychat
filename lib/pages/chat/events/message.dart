@@ -33,6 +33,7 @@ import 'message_actions.dart';
 import 'message_content.dart';
 import 'message_reactions.dart';
 import 'reply_content.dart';
+import 'sender_trust_warning.dart';
 import 'state_message.dart';
 
 class Message extends StatelessWidget {
@@ -736,6 +737,11 @@ class Message extends StatelessWidget {
                                       ),
                                       child: MessageReactions(event, timeline),
                                     ),
+                            ),
+                            SenderTrustWarning(
+                              event: event,
+                              ownMessage: ownMessage,
+                              shadows: wallpaperTextShadow,
                             ),
                             Row(
                               mainAxisAlignment: ownMessage ? .end : .start,
