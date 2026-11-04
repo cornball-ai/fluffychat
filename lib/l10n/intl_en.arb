@@ -2866,5 +2866,20 @@
                 "type": "String"
             }
         }
+    },
+    "encryptedByUnsignedDevice": "Encrypted by a device its owner has not verified",
+    "@encryptedByUnsignedDevice": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "encryptedByUnknownDevice": "Encrypted by an unknown or deleted device",
+    "@encryptedByUnknownDevice": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "encryptedByOtherUsersDevice": "Encrypted by a device that belongs to another user",
+    "@encryptedByOtherUsersDevice": {
+        "type": "String",
+        "placeholders": {}
     }
 }

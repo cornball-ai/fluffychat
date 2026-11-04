@@ -8,16 +8,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 This is cornball-ai's fork of [FluffyChat](https://github.com/krille-chan/fluffychat).
 LLM-assisted work is allowed and expected in this repository: code, tests,
-documentation, commit messages, and pull request descriptions. Upstream's
-`AGENTS.md` and item 2 of `CONTRIBUTING.md` prohibit LLM contributions to
-upstream's repository. That rule is theirs and does not apply here. This file
-replaces upstream's `AGENTS.md` and is maintained in the fork.
+documentation, commit messages, and pull request descriptions. Upstream
+removed its own `AGENTS.md` in krille-chan/fluffychat@607edd5a76
+(2026-10-22). Item 2 of upstream's `CONTRIBUTING.md` now reads: "We do not
+vibe code! You are required to understand and be able to explain every single
+line of code of your contribution." This file is the fork's own and is
+maintained here.
 
 ## What still applies
 
-- Nothing LLM-authored goes to krille-chan/fluffychat: no issues, pull
-  requests, review comments, or discussion posts. Upstream sets the rules for
-  upstream.
+- Contributions to krille-chan/fluffychat follow upstream's current rules:
+  pull requests are limited to collaborators for now (access is requested in
+  an issue), and the contributor must understand and be able to explain
+  every line. Issues and pull requests drafted with LLM help say so. Nothing
+  goes upstream without Troy's review and approval.
 - The rest of `CONTRIBUTING.md` still describes the code style this fork
   follows: controller/view split, `dart format`, analyzer rules, no changes
   under the platform directories, minimal dependencies, Conventional Commits.
