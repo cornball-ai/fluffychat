@@ -26,14 +26,35 @@ maintained here.
   follows: controller/view split, `dart format`, analyzer rules, no changes
   under the platform directories, minimal dependencies, Conventional Commits.
 - CI is `.github/workflows/integrate.yaml`. The deploy, release, Matrix
-  notification, and stale workflows are upstream's and are gated to run only
-  in krille-chan/fluffychat.
+  notification, stale, and Flutter update workflows are upstream's. Their
+  files stay identical to upstream's so they never conflict in a merge; they
+  are disabled in the fork's Actions settings (`gh workflow disable`). A new
+  upstream workflow arrives enabled: disable it when a catch-up brings one.
+
+## Catching up with upstream
+
+The steps, on a `catch-up/vX.Y.Z` branch:
+
+1. `scripts/fork/catch-up.sh check` lists the commits behind, the Flutter
+   version upstream pins in `.fvmrc`, and the files a merge would conflict in.
+2. Move the local Flutter SDK to the pinned version.
+3. `scripts/fork/catch-up.sh merge` merges the newest release tag and takes
+   upstream's `pubspec.lock`. Resolve the files it lists. In `pubspec.yaml`
+   and `integrate.yaml`, take upstream's side and re-add the fork's lines
+   (`tray_manager`, `window_manager`, the `fonts:` block, and
+   `libayatana-appindicator3-dev` on the Linux apt line).
+4. `flutter pub get`, then `scripts/fork/catch-up.sh verify`, which runs the
+   checks of CI's `code_tests` and `flutter_tests` jobs.
+5. Commit the merge and open a pull request that lands as a merge commit.
 
 ## Fork conventions
 
 - Catch-up merges from upstream land as merge commits, not squashes, so the
   next catch-up sees the shared ancestor. Pull requests from fork branches
   are otherwise squash-merged.
+- Shared files carry as little fork code as possible. A fork feature lives in
+  its own file and the upstream file calls it in a few lines, so a merge has
+  little to conflict with.
 - Fork-added files carry a REUSE header like the one at the top of this
   file: copyright `2026-Present cornball.ai`, license AGPL-3.0-or-later. The
   REUSE check in CI fails on a file without a header or a `REUSE.toml`
