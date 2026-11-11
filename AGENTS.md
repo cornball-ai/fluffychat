@@ -33,9 +33,7 @@ maintained here.
 
 ## Catching up with upstream
 
-`.github/workflows/fork_upstream_check.yaml` runs every Monday and fails when
-upstream has a release tag that `main` does not contain. The steps, on a
-`catch-up/vX.Y.Z` branch:
+The steps, on a `catch-up/vX.Y.Z` branch:
 
 1. `scripts/fork/catch-up.sh check` lists the commits behind, the Flutter
    version upstream pins in `.fvmrc`, and the files a merge would conflict in.
