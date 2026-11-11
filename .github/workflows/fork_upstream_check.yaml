@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026-Present cornball.ai
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Fork Upstream Check
+
+# Fork-only. Fails when krille-chan/fluffychat has a release tag that main
+# does not contain yet, so the run's failure notification is the reminder to
+# catch up. The job summary lists the files that would conflict.
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.repository == 'cornball-ai/fluffychat'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Compare main with upstream's newest release tag
+        run: |
+          set -o pipefail
+          ./scripts/fork/catch-up.sh check | tee -a "$GITHUB_STEP_SUMMARY"
