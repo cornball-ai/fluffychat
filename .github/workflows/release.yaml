@@ -14,11 +14,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Fork: these jobs publish to upstream's targets with upstream's secrets,
-  # so they run only in krille-chan/fluffychat.
   build_web:
-    if: github.repository == 'krille-chan/fluffychat'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -73,8 +70,7 @@ jobs:
           cname: fluffychat.im
 
   build_apk:
-    if: github.repository == 'krille-chan/fluffychat'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -106,15 +102,14 @@ jobs:
           asset_content_type: application/vnd.android.package-archive
 
   build_linux:
-    if: github.repository == 'krille-chan/fluffychat'
     strategy:
       matrix:
         arch: [ x64, arm64 ]
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest'}}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-latest'}}
     steps:
       - uses: actions/checkout@v7
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install curl clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev libjsoncpp-dev cmake-data libsecret-1-dev libsecret-1-0 librhash0 libssl-dev libwebkit2gtk-4.1-dev -y
+        run: sudo apt-get update && sudo apt-get install curl clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev libjsoncpp-dev cmake-data libsecret-1-dev libsecret-1-0 librhash1 libssl-dev libwebkit2gtk-4.1-dev -y
       - run: echo "FLUTTER_VERSION=$(yq '.flutter' < .fvmrc)" >> $GITHUB_ENV
       - name: Install Flutter
         run: |
@@ -136,11 +131,10 @@ jobs:
           asset_content_type: application/gzip
 
   deploy_snapstore:
-    if: github.repository == 'krille-chan/fluffychat'
     strategy:
       matrix:
         arch: [ x64, arm64 ]
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest'}}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-latest'}}
     steps:
       - uses: actions/checkout@v7
       - name: Determine Snap channel
@@ -161,7 +155,6 @@ jobs:
           release: ${{ steps.channel.outputs.channel }}
 
   build_windows:
-    if: github.repository == 'krille-chan/fluffychat'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -185,8 +178,7 @@ jobs:
           asset_content_type: application/vnd.microsoft.portable-executable
 
   deploy_playstore:
-    if: github.repository == 'krille-chan/fluffychat'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     concurrency:
       group: deploy_playstore
       queue: max
@@ -236,8 +228,7 @@ jobs:
           cd ..
 
   deploy_docker:
-    if: github.repository == 'krille-chan/fluffychat'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
@@ -245,7 +236,7 @@ jobs:
       - name: Check out Git repository
         uses: actions/checkout@v7
       - name: Log in to the Container registry
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -264,7 +255,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy_ios_appstore:
-    if: github.repository == 'krille-chan/fluffychat'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
@@ -287,6 +277,7 @@ jobs:
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           MATCH_PASSWORD: ${{ secrets.FASTLANE_MATCH_PASSWORD }}
           APP_STORE_API_KEY: ${{ secrets.APP_STORE_API_KEY }}
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
         run: |
           if [[ $GITHUB_REF_NAME == rc* ]]; then
             fastlane rc
@@ -296,7 +287,6 @@ jobs:
         working-directory: ios
 
   deploy_macos_appstore:
-    if: github.repository == 'krille-chan/fluffychat'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
